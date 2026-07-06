@@ -1,0 +1,13 @@
+{
+  "permissions": {
+    "allow": [
+      "mcp__ai-game-developer__assets-refresh",
+      "mcp__ai-game-developer__console-get-logs",
+      "mcp__ai-game-developer__gameobject-create",
+      "mcp__ai-game-developer__gameobject-component-add",
+      "Bash(unity-mcp-cli run-tool *)",
+      "Bash(node -e ' *)",
+      "mcp__ai-game-developer__script-execute"
+    ]
+  }
+}

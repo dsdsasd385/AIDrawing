@@ -1,0 +1,68 @@
+{
+    "EpisodeId": 3,
+    "EpisodeName": "자연재해 대응하기",
+    "Description": "만약 ~라면! 재난에 맞는 대응을 정해서 구조 로봇을 움직여 보세요.",
+    "Hint": "불이 나면 무엇이 필요할까요?\n뜨거운 날에는 무엇이 필요할까요?",
+    "SuccessText": "구조 로봇이 마을을 지켜냈어요!",
+    "FailText": "재난에 맞는 대응을 다시 생각해 볼까요?",
+    "Blocks": [
+        {
+            "Id": "if",
+            "Name": "만약 ~라면",
+            "Type": "Condition",
+            "Description": "만약 [재난]이 일어나면 [대응]을 해요. 조건문 블록이에요.",
+            "Value": 0.0,
+            "Extra": ""
+        }
+    ],
+    "Params": [
+        {
+            "Key": "Disasters",
+            "Value": "폭염|지진|태풍|산사태|해일|산불"
+        },
+        {
+            "Key": "Actions",
+            "Value": "물 공급|대피 안내|시설물 관리|소방 드론"
+        },
+        {
+            "Key": "Answer_폭염",
+            "Value": "물 공급"
+        },
+        {
+            "Key": "Answer_지진",
+            "Value": "대피 안내"
+        },
+        {
+            "Key": "Answer_태풍",
+            "Value": "시설물 관리"
+        },
+        {
+            "Key": "Answer_산사태",
+            "Value": "대피 안내"
+        },
+        {
+            "Key": "Answer_해일",
+            "Value": "대피 안내"
+        },
+        {
+            "Key": "Answer_산불",
+            "Value": "소방 드론"
+        },
+        {
+            "Key": "EventCount",
+            "Value": "3"
+        },
+        {
+            "Key": "Score5Success",
+            "Value": "3"
+        },
+        {
+            "Key": "Score3Success",
+            "Value": "2"
+        },
+        {
+            "Key": "Score1Success",
+            "Value": "1"
+        }
+    ]
+}

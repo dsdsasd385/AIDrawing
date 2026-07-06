@@ -1,0 +1,88 @@
+{
+    "EpisodeId": 4,
+    "EpisodeName": "탄소 배출 줄이기",
+    "Description": "좋은 행동을 반복(반복문)해서 탄소 발자국을 줄여보세요.",
+    "Hint": "좋은 행동은 여러 번 반복할수록\n탄소 발자국이 작아져요!",
+    "SuccessText": "탄소 발자국이 작아졌어요! 지구가 가벼워졌대요!",
+    "FailText": "탄소 발자국이 아직 커요. 좋은 행동을 더 반복해 볼까요?",
+    "Blocks": [
+        {
+            "Id": "walk",
+            "Name": "걷기",
+            "Type": "Loop",
+            "Description": "가까운 거리는 걸어요. 매연이 나오지 않아요.",
+            "Value": -3.0,
+            "Extra": "good"
+        },
+        {
+            "Id": "recycle",
+            "Name": "재활용",
+            "Type": "Loop",
+            "Description": "쓰레기를 다시 쓸 수 있게 분리해요.",
+            "Value": -2.0,
+            "Extra": "good"
+        },
+        {
+            "Id": "plug",
+            "Name": "플러그 뽑기",
+            "Type": "Loop",
+            "Description": "안 쓰는 전기 제품의 플러그를 뽑아요.",
+            "Value": -2.0,
+            "Extra": "good"
+        },
+        {
+            "Id": "water",
+            "Name": "물 절약",
+            "Type": "Loop",
+            "Description": "물을 아껴 쓰면 에너지도 아낄 수 있어요.",
+            "Value": -2.0,
+            "Extra": "good"
+        },
+        {
+            "Id": "car",
+            "Name": "자동차",
+            "Type": "Loop",
+            "Description": "가까운 거리도 자동차를 타면 매연이 나와요.",
+            "Value": 3.0,
+            "Extra": "bad"
+        },
+        {
+            "Id": "disposable",
+            "Name": "일회용품",
+            "Type": "Loop",
+            "Description": "한 번 쓰고 버리는 물건은 쓰레기가 돼요.",
+            "Value": 2.0,
+            "Extra": "bad"
+        },
+        {
+            "Id": "power",
+            "Name": "과다 전기 사용",
+            "Type": "Loop",
+            "Description": "전기를 너무 많이 쓰면 발전소가 더 일해야 해요.",
+            "Value": 2.0,
+            "Extra": "bad"
+        },
+        {
+            "Id": "overwater",
+            "Name": "과다 물 사용",
+            "Type": "Loop",
+            "Description": "물을 낭비하면 깨끗한 물이 부족해져요.",
+            "Value": 2.0,
+            "Extra": "bad"
+        }
+    ],
+    "Params": [
+        {
+            "Key": "StartCarbon",
+            "Value": "30"
+        },
+        {
+            "Key": "MaxRepeat",
+            "Value": "5"
+        },
+        {
+            "Key": "ScorePerReduce",
+            "Value": "5"
+        }
+    ]
+}

@@ -1,0 +1,10 @@
+{
+    "AdminPassword": "0000",
+    "IdleTimeoutSec": 180.0,
+    "UseBgm": true,
+    "UseSfx": true,
+    "UseAnimation": true,
+    "TimerSec": 0.0,
+    "Difficulty": "Normal",
+    "Version": "1.0.0"
+}

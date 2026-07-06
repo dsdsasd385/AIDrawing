@@ -1,0 +1,68 @@
+{
+    "EpisodeId": 5,
+    "EpisodeName": "지구 회복하기",
+    "Description": "지구 회복 프로젝트(함수)를 완성하고, 함수를 호출해서 지구를 회복시키세요!",
+    "Hint": "함수 안에 네 가지 단계를 순서대로 넣고,\n함수를 여러 번 호출하면 지구가 더 많이 회복돼요!",
+    "SuccessText": "지구가 완전히 회복됐어요! 여러분은 지구의 영웅이에요!",
+    "FailText": "함수 안의 단계를 다시 확인해 볼까요?",
+    "Blocks": [
+        {
+            "Id": "carbon",
+            "Name": "탄소 줄이기",
+            "Type": "Function",
+            "Description": "지구 회복 1단계! 탄소를 줄여요.",
+            "Value": 0.0,
+            "Extra": "1"
+        },
+        {
+            "Id": "energy",
+            "Name": "신재생에너지",
+            "Type": "Function",
+            "Description": "지구 회복 2단계! 태양과 바람으로 전기를 만들어요.",
+            "Value": 0.0,
+            "Extra": "2"
+        },
+        {
+            "Id": "trash",
+            "Name": "쓰레기 줄이기",
+            "Type": "Function",
+            "Description": "지구 회복 3단계! 쓰레기를 줄여요.",
+            "Value": 0.0,
+            "Extra": "3"
+        },
+        {
+            "Id": "calc",
+            "Name": "계산하기",
+            "Type": "Function",
+            "Description": "지구 회복 4단계! 얼마나 회복됐는지 계산해요.",
+            "Value": 0.0,
+            "Extra": "4"
+        },
+        {
+            "Id": "call",
+            "Name": "지구 회복 프로젝트 호출",
+            "Type": "Command",
+            "Description": "완성한 '지구 회복 프로젝트' 함수를 실행해요.",
+            "Value": 0.0,
+            "Extra": "call"
+        }
+    ],
+    "Params": [
+        {
+            "Key": "StepHeal",
+            "Value": "2"
+        },
+        {
+            "Key": "MaxCalls",
+            "Value": "6"
+        },
+        {
+            "Key": "MaxScore",
+            "Value": "50"
+        },
+        {
+            "Key": "MinScore",
+            "Value": "1"
+        }
+    ]
+}

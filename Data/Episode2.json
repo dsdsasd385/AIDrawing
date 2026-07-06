@@ -1,0 +1,64 @@
+{
+    "EpisodeId": 2,
+    "EpisodeName": "빙하 지키기",
+    "Description": "탐사 로봇에게 올바른 순서로 명령을 내려 빙하를 지켜주세요.",
+    "Hint": "먼저 빙하를 살펴보고(측정),\n마지막에 북극곰을 지켜주는 순서로 해보세요!",
+    "SuccessText": "빙하와 북극곰을 지켜냈어요!",
+    "FailText": "순서가 조금 아쉬워요. 측정을 먼저 해볼까요?",
+    "Blocks": [
+        {
+            "Id": "thick",
+            "Name": "빙하 두께 측정",
+            "Type": "Command",
+            "Description": "빙하가 얼마나 두꺼운지 재요. 탐사의 첫걸음!",
+            "Value": 0.0,
+            "Extra": "1"
+        },
+        {
+            "Id": "size",
+            "Name": "빙하 크기 측정",
+            "Type": "Command",
+            "Description": "빙하가 얼마나 큰지 재요.",
+            "Value": 0.0,
+            "Extra": "2"
+        },
+        {
+            "Id": "temp",
+            "Name": "바닷물 온도 측정",
+            "Type": "Command",
+            "Description": "바닷물이 얼마나 따뜻한지 재요.",
+            "Value": 0.0,
+            "Extra": "3"
+        },
+        {
+            "Id": "sample",
+            "Name": "샘플 모으기",
+            "Type": "Command",
+            "Description": "측정이 끝나면 얼음 조각을 모아 연구실로 보내요.",
+            "Value": 0.0,
+            "Extra": "4"
+        },
+        {
+            "Id": "bear",
+            "Name": "북극곰 지키기",
+            "Type": "Command",
+            "Description": "마지막으로 북극곰이 안전한지 확인해요.",
+            "Value": 0.0,
+            "Extra": "5"
+        }
+    ],
+    "Params": [
+        {
+            "Key": "Score3Correct",
+            "Value": "5"
+        },
+        {
+            "Key": "Score2Correct",
+            "Value": "3"
+        },
+        {
+            "Key": "Score1Correct",
+            "Value": "0"
+        }
+    ]
+}

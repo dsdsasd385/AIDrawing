@@ -1,0 +1,82 @@
+[15:05:25] [Info] ===== 프로그램 시작 =====
+[15:05:25] [Info] 기본 데이터 파일 자동 생성: C:\Users\HULIAC\Unity\Practice01\Data\Story.json
+[15:05:25] [Info] 기본 데이터 파일 자동 생성: C:\Users\HULIAC\Unity\Practice01\Config\Config.json
+[15:05:25] [Info] 기본 데이터 파일 자동 생성: C:\Users\HULIAC\Unity\Practice01\Data\Episode1.json
+[15:05:25] [Info] 기본 데이터 파일 자동 생성: C:\Users\HULIAC\Unity\Practice01\Data\Episode2.json
+[15:05:25] [Info] 기본 데이터 파일 자동 생성: C:\Users\HULIAC\Unity\Practice01\Data\Episode3.json
+[15:05:25] [Info] 기본 데이터 파일 자동 생성: C:\Users\HULIAC\Unity\Practice01\Data\Episode4.json
+[15:05:25] [Info] 기본 데이터 파일 자동 생성: C:\Users\HULIAC\Unity\Practice01\Data\Episode5.json
+[15:05:25] [Info] 외부 데이터 로드 완료
+[15:05:25] [Warning] 효과음 없음: MainBgm (재생 생략)
+[15:06:06] [Info] Episode1 시작: 지구 온도 낮추기
+[15:07:07] [Info] Episode1 점수 저장: 1점
+[15:07:07] [Warning] 효과음 없음: Fail (재생 생략)
+[15:07:07] [Info] Episode1 실행 결과: 실패 / 1점
+[15:08:09] [Info] Episode2 시작: 빙하 지키기
+[15:08:16] [Info] Episode2 점수 저장: 1점
+[15:08:16] [Warning] 효과음 없음: Success (재생 생략)
+[15:08:16] [Info] Episode2 실행 결과: 성공 / 1점
+[15:08:24] [Warning] <color=#ffaa00>warn:</color> [15:08:24:4023] <color=#B4FF32>[AI]</color> <color=#85C1E2><b>BufferedFileLogStorage</b></color> Flush called but already disposed, ignored.
+[15:11:23] [Warning] <color=#ffaa00>warn:</color> [15:11:23:9067] <color=#B4FF32>[AI]</color> <color=#85C1E2><b>BufferedFileLogStorage</b></color> Flush called but already disposed, ignored.
+[15:11:53] [Info] ===== 프로그램 시작 =====
+[15:11:53] [Info] 외부 데이터 로드 완료
+[15:11:53] [Warning] 효과음 없음: MainBgm (재생 생략)
+[15:12:09] [Info] Episode1 시작: 지구 온도 낮추기
+[15:12:09] [Info] Episode2 시작: 빙하 지키기
+[15:12:35] [Info] Episode2 점수 저장: 3점
+[15:12:35] [Warning] 효과음 없음: Success (재생 생략)
+[15:12:35] [Info] Episode2 실행 결과: 성공 / 3점
+[15:12:59] [Warning] 효과음 없음: Fail (재생 생략)
+[15:12:59] [Info] Episode2 실행 결과: 실패 / 1점
+[15:14:08] [Info] Episode2 실행 결과: 실패 / 1점
+[15:14:36] [Warning] <color=#ffaa00>warn:</color> [15:14:36:3940] <color=#B4FF32>[AI]</color> <color=#85C1E2><b>BufferedFileLogStorage</b></color> Flush called but already disposed, ignored.
+[15:16:32] [Error] Assets\Scripts\Episodes\EpisodeManager.cs(49,41): error CS0246: The type or namespace name 'Episode3Controller' could not be found (are you missing a using directive or an assembly reference?)
+
+[15:16:59] [Warning] <color=#ffaa00>warn:</color> [15:16:59:7972] <color=#B4FF32>[AI]</color> <color=#85C1E2><b>BufferedFileLogStorage</b></color> Flush called but already disposed, ignored.
+[15:17:15] [Info] ===== 프로그램 시작 =====
+[15:17:15] [Info] 외부 데이터 로드 완료
+[15:17:15] [Warning] 효과음 없음: MainBgm (재생 생략)
+[15:18:43] [Info] Episode1 시작: 지구 온도 낮추기
+[15:18:43] [Info] Episode3 시작: 자연재해 대응하기
+[15:19:20] [Info] Episode3 점수 저장: 5점
+[15:19:20] [Warning] 효과음 없음: Success (재생 생략)
+[15:19:20] [Info] Episode3 실행 결과: 성공 / 5점
+[15:19:50] [Info] Episode3 시작: 자연재해 대응하기
+[15:20:19] [Info] Episode3 실행 결과: 성공 / 5점
+[15:20:58] [Warning] <color=#ffaa00>warn:</color> [15:20:58:2519] <color=#B4FF32>[AI]</color> <color=#85C1E2><b>BufferedFileLogStorage</b></color> Flush called but already disposed, ignored.
+[15:23:10] [Warning] <color=#ffaa00>warn:</color> [15:23:10:3340] <color=#B4FF32>[AI]</color> <color=#85C1E2><b>BufferedFileLogStorage</b></color> Flush called but already disposed, ignored.
+[15:23:29] [Info] ===== 프로그램 시작 =====
+[15:23:29] [Info] 외부 데이터 로드 완료
+[15:23:29] [Warning] 효과음 없음: MainBgm (재생 생략)
+[15:23:43] [Info] Episode1 시작: 지구 온도 낮추기
+[15:23:43] [Info] Episode4 시작: 탄소 배출 줄이기
+[15:25:31] [Info] Episode4 점수 저장: 6점
+[15:25:31] [Warning] 효과음 없음: Success (재생 생략)
+[15:25:31] [Info] Episode4 실행 결과: 성공 / 6점
+[15:25:49] [Warning] <color=#ffaa00>warn:</color> [15:25:49:4420] <color=#B4FF32>[AI]</color> <color=#85C1E2><b>BufferedFileLogStorage</b></color> Flush called but already disposed, ignored.
+[15:27:43] [Warning] <color=#ffaa00>warn:</color> [15:27:43:6224] <color=#B4FF32>[AI]</color> <color=#85C1E2><b>BufferedFileLogStorage</b></color> Flush called but already disposed, ignored.
+[15:27:58] [Info] ===== 프로그램 시작 =====
+[15:27:58] [Info] 외부 데이터 로드 완료
+[15:27:58] [Warning] 효과음 없음: MainBgm (재생 생략)
+[15:29:37] [Info] Episode1 시작: 지구 온도 낮추기
+[15:29:37] [Info] Episode5 시작: 지구 회복하기
+[15:30:37] [Info] Episode5 점수 저장: 24점
+[15:30:37] [Warning] 효과음 없음: Success (재생 생략)
+[15:30:37] [Info] Episode5 실행 결과: 성공 / 24점
+[15:31:12] [Warning] <color=#ffaa00>warn:</color> [15:31:12:0605] <color=#B4FF32>[AI]</color> <color=#85C1E2><b>BufferedFileLogStorage</b></color> Flush called but already disposed, ignored.
+[15:33:52] [Error] Assets\Scripts\UI\AdminPanel.cs(206,42): error CS1061: 'GameManager' does not contain a definition for 'HideStory' and no accessible extension method 'HideStory' accepting a first argument of type 'GameManager' could be found (are you missing a using directive or an assembly reference?)
+
+[15:34:54] [Warning] <color=#ffaa00>warn:</color> [15:34:54:5417] <color=#B4FF32>[AI]</color> <color=#85C1E2><b>BufferedFileLogStorage</b></color> Flush called but already disposed, ignored.
+[15:35:17] [Info] ===== 프로그램 시작 =====
+[15:35:17] [Info] 외부 데이터 로드 완료
+[15:35:17] [Warning] 효과음 없음: MainBgm (재생 생략)
+[15:35:33] [Info] 관리자 모드 진입
+[15:36:06] [Info] Episode2 시작: 빙하 지키기
+[15:36:22] [Info] Episode5 시작: 지구 회복하기
+[15:36:30] [Info] 전체 점수 초기화
+[15:36:44] [Warning] <color=#ffaa00>warn:</color> [15:36:44:6647] <color=#B4FF32>[AI]</color> <color=#85C1E2><b>BufferedFileLogStorage</b></color> Flush called but already disposed, ignored.
+[15:40:32] [Warning] <color=#ffaa00>warn:</color> [15:40:32:7083] <color=#B4FF32>[AI]</color> <color=#85C1E2><b>BufferedFileLogStorage</b></color> Flush called but already disposed, ignored.
+[15:40:48] [Info] ===== 프로그램 시작 =====
+[15:40:48] [Info] 외부 데이터 로드 완료
+[15:40:48] [Warning] 효과음 없음: MainBgm (재생 생략)
+[15:41:09] [Warning] <color=#ffaa00>warn:</color> [15:41:09:9119] <color=#B4FF32>[AI]</color> <color=#85C1E2><b>BufferedFileLogStorage</b></color> Flush called but already disposed, ignored.

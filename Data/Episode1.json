@@ -1,0 +1,60 @@
+{
+    "EpisodeId": 1,
+    "EpisodeName": "지구 온도 낮추기",
+    "Description": "블록의 늘리기/줄이기(변수)를 정해서 CO₂를 줄이고 지구 온도를 낮춰보세요.",
+    "Hint": "공장 연기가 나오는 것은 줄이고,\n깨끗한 에너지와 나무는 늘려보세요!",
+    "SuccessText": "지구가 시원해졌어요! 고마워요!",
+    "FailText": "지구가 아직 뜨거워요. 블록의 늘리기/줄이기를 바꿔볼까요?",
+    "Blocks": [
+        {
+            "Id": "coal",
+            "Name": "화력 발전",
+            "Type": "Variable",
+            "Description": "석탄을 태워 전기를 만들어요. 늘리면 CO₂가 많이 나와요.",
+            "Value": 20.0,
+            "Extra": ""
+        },
+        {
+            "Id": "ev",
+            "Name": "전기 자동차",
+            "Type": "Variable",
+            "Description": "매연이 나오지 않는 자동차예요. 늘리면 공기가 깨끗해져요.",
+            "Value": -10.0,
+            "Extra": ""
+        },
+        {
+            "Id": "park",
+            "Name": "공원",
+            "Type": "Variable",
+            "Description": "나무가 CO₂를 마시고 산소를 만들어요.",
+            "Value": -15.0,
+            "Extra": ""
+        },
+        {
+            "Id": "dust",
+            "Name": "미세먼지",
+            "Type": "Variable",
+            "Description": "하늘을 뿌옇게 만드는 작은 먼지예요.",
+            "Value": 10.0,
+            "Extra": ""
+        }
+    ],
+    "Params": [
+        {
+            "Key": "StartCo2",
+            "Value": "100"
+        },
+        {
+            "Key": "Score3Co2",
+            "Value": "45"
+        },
+        {
+            "Key": "Score2Co2",
+            "Value": "70"
+        },
+        {
+            "Key": "Score1Co2",
+            "Value": "99"
+        }
+    ]
+}
