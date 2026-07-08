@@ -1,0 +1,6 @@
+[16:21:02] [Info] ===== 프로그램 시작 =====
+[16:21:02] [Info] 외부 데이터 로드 완료
+[16:21:02] [Warning] 효과음 없음: MainBgm (재생 생략)
+[16:21:04] [Info] Episode1 시작: 지구 온도 낮추기
+[16:21:08] [Warning] [2026-07-08] [16:21:08] <color=#ffaa00>warn:</color> [16:21:08:1422] <color=#B4FF32>[AI]</color> <color=#85C1E2><b>BufferedFileLogStorage</b></color> Flush called but already disposed, ignored.
+[16:23:21] [Warning] [2026-07-08] [16:23:21] <color=#ffaa00>warn:</color> [16:23:21:9366] <color=#B4FF32>[AI]</color> <color=#85C1E2><b>BufferedFileLogStorage</b></color> Flush called but already disposed, ignored.

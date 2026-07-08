@@ -9,5 +9,8 @@
       "Bash(node -e ' *)",
       "mcp__ai-game-developer__script-execute"
     ]
-  }
+  },
+  "disabledMcpjsonServers": [
+    "ai-game-developer"
+  ]
 }

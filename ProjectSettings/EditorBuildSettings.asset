@@ -6,6 +6,6 @@ EditorBuildSettings:
   serializedVersion: 2
   m_Scenes:
   - enabled: 1
-    path: Assets/Scenes/Main.unity
+    path: Assets/Scenes/BlockCoding.unity
     guid: df056ccaae5d4bd4fa54a2b7b2c4ac0d
   m_configObjects: {}
