@@ -14,8 +14,9 @@ namespace CarDrawing.Core
         public string workflowPath = "ComfyUI/car_workflow_api.json";
         /// <summary>완료 폴링 간격(초). 계획서 7장: 0.5초</summary>
         public float pollIntervalSeconds = 0.5f;
-        /// <summary>생성 전체 타임아웃(초). 계획서 12장: 초과 시 해당 세션만 사과 후 초기화</summary>
-        public float generateTimeoutSeconds = 30f;
+        /// <summary>생성 전체 타임아웃(초). 계획서 12장: 초과 시 해당 세션만 사과 후 초기화.
+        /// 콜드 스타트 첫 생성이 ~32초라 여유를 둔다(인수인계 §6). 워밍업이 있으면 실제 생성은 7~13초</summary>
+        public float generateTimeoutSeconds = 45f;
         /// <summary>제출 재시도 횟수. 업로드 직후 첫 제출 실패가 실측된 함정 (인수인계 §6)</summary>
         public int submitMaxRetries = 1;
     }

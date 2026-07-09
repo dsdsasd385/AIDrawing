@@ -65,6 +65,9 @@ namespace CarDrawing.Core
             resultPanel.RetryRequested += OnRetryRequested;
 
             EnterState(AppState.Attract);
+
+            // 서버 예열: 첫 관람객이 오기 전에 모델을 미리 적재해 콜드 스타트 첫 생성 타임아웃(인수인계 §6)을 없앤다
+            if (comfyClient != null) comfyClient.Warmup();
         }
 
         private void OnDestroy()

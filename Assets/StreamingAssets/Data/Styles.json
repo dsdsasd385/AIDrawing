@@ -3,10 +3,34 @@
     {
       "id": "realistic",
       "name": "실사",
-      "prompt": "a photorealistic car, studio lighting, glossy paint, showroom background, high quality, detailed, 4k",
-      "negativePrompt": "sketch, drawing, cartoon, blurry, lowres, bad anatomy, text, watermark, deformed wheels",
+      "prompt": "(a photorealistic single complete car:1.5), full car body, (four round wheels touching the ground:0.7), glossy car paint, detailed car wheels, metallic car body,  professional automotive photography, sharp focus, highly detailed, 4k",
+      "negativePrompt": "studio equipment, light stand, softbox, lamp, background objects, scenery, sketch, drawing, doodle, scribble, childish, unfinished, deformed, distorted, mutated, extra wheels, missing wheels, square wheels, broken wheels, floating parts, disconnected parts, open doors, abstract, messy, blurry, lowres, bad anatomy, text, watermark",
+      "denoise": 0.8,
+      "thumbnail": "StyleExamples/realistic.png"
+    },
+    {
+      "id": "cartoon",
+      "name": "카툰",
+      "prompt": "a cartoon car illustration, cel shading, bold clean outlines, vibrant flat colors, playful children book style",
+      "negativePrompt": "photorealistic, photo, blurry, lowres, bad anatomy, text, watermark, deformed wheels",
+      "denoise": 0.72,
+      "thumbnail": "StyleExamples/cartoon.png"
+    },
+    {
+      "id": "pixelart",
+      "name": "픽셀아트",
+      "prompt": "pixel art car, 16-bit retro game sprite, crisp square pixels, limited color palette, side view",
+      "negativePrompt": "photorealistic, photo, smooth gradient, blurry, antialiased, text, watermark",
+      "denoise": 0.72,
+      "thumbnail": "StyleExamples/pixelart.png"
+    },
+    {
+      "id": "simplecolor",
+      "name": "클레이",
+      "prompt": "simple flat color car illustration, minimal shading, clean thick outlines, soft pastel colors, vector style",
+      "negativePrompt": "photorealistic, photo, complex shading, blurry, lowres, text, watermark, deformed wheels",
       "denoise": 0.7,
-      "thumbnail": "realistic.png"
+      "thumbnail": "StyleExamples/simplecolor.png"
     }
   ]
 }

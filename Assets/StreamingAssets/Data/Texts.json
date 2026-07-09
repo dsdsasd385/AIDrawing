@@ -15,6 +15,10 @@
   "drawing.idle.continue": "네, 계속 그릴래요!",
 
   "style.title": "어떤 스타일로 완성할까요?",
+  "style.realistic": "실사",
+  "style.cartoon": "카툰",
+  "style.pixelart": "픽셀아트",
+  "style.simplecolor": "채색",
 
   "generating.message": "AI가 그림을 완성하고 있어요",
   "generating.error": "죄송해요, 그림을 완성하지 못했어요.\n잠시 후 다시 도전해 주세요!",

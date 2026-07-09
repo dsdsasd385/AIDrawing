@@ -23,6 +23,81 @@ namespace CarDrawing.Generation
         // 서버가 요청 주체를 구분하는 식별자. 앱 실행마다 새로 발급해도 무방
         private readonly string _clientId = Guid.NewGuid().ToString("N");
 
+        // 워밍업 상태. 앱 실행당 1회만 예열하도록 가드한다
+        private bool _warmedUp;
+        private bool _warmingUp;
+
+        // 워밍업 더미 이미지 크기(정사각). 내용은 무의미(결과 폐기) — 모델 적재만 목적이라 작게 잡아 샘플링을 줄인다
+        private const int WarmupImageSize = 512;
+        // 워밍업 재시도 (부팅 시 ComfyUI가 늦게 뜨는 경우 대비). 인수인계 §6 콜드 스타트 대응
+        private const int WarmupMaxAttempts = 3;
+        private const float WarmupRetryDelaySeconds = 5f;
+
+        /// <summary>
+        /// 서버를 예열한다. 앱 시작 시 1회 호출: 더미 생성으로 모델을 미리 VRAM에 적재해
+        /// 콜드 스타트 첫 생성이 30초 타임아웃을 넘겨 "첫 이미지가 안 나오는" 문제(인수인계 §6)를 없앤다.
+        /// 결과는 버리며, 서버가 아직 안 떠 있으면 잠시 뒤 재시도한다. 관람객 체험을 막지 않는다(백그라운드).
+        /// </summary>
+        public void Warmup()
+        {
+            if (_warmedUp || _warmingUp) return;
+            _warmingUp = true;
+            StartCoroutine(WarmupRoutine());
+        }
+
+        private IEnumerator WarmupRoutine()
+        {
+            LogManager.Info("[ComfyUI] 워밍업 시작 (모델 예열)");
+            byte[] dummy = MakeDummyPng();
+            // 스타일은 아무거나 무방(결과 폐기). 목록 폴백이 보장되므로 0번 사용
+            StylePreset style = StyleLibrary.Styles[0];
+
+            for (int attempt = 1; attempt <= WarmupMaxAttempts && !_warmedUp; attempt++)
+            {
+                bool done = false, ok = false;
+                Generate("warmup", dummy, dummy, style,
+                    _ => { ok = true; done = true; },
+                    _ => { done = true; });
+                while (!done) yield return null;
+
+                if (ok)
+                {
+                    _warmedUp = true;
+                    LogManager.Info("[ComfyUI] 워밍업 완료 (모델 예열됨)");
+                }
+                else if (attempt < WarmupMaxAttempts)
+                {
+                    // 대개 서버가 아직 준비 안 된 경우. 잠시 뒤 재시도
+                    LogManager.Warn($"[ComfyUI] 워밍업 실패 {attempt}/{WarmupMaxAttempts} — {WarmupRetryDelaySeconds}초 후 재시도");
+                    yield return new WaitForSecondsRealtime(WarmupRetryDelaySeconds);
+                }
+                else
+                {
+                    // 끝까지 실패해도 체험은 계속된다. 첫 실제 생성이 로딩을 감당(타임아웃 여유값이 보호)
+                    LogManager.Warn("[ComfyUI] 워밍업 최종 실패 — 첫 실제 생성 때 모델이 적재된다");
+                }
+            }
+            _warmingUp = false;
+        }
+
+        // 워밍업용 더미 PNG(흰 배경 + 가운데 검은 사각형). 파이프라인을 실제로 태워 모델을 적재하는 게 목적
+        private static byte[] MakeDummyPng()
+        {
+            var tex = new Texture2D(WarmupImageSize, WarmupImageSize, TextureFormat.RGB24, false);
+            var pixels = new Color32[WarmupImageSize * WarmupImageSize];
+            var white = new Color32(255, 255, 255, 255);
+            var black = new Color32(0, 0, 0, 255);
+            int lo = WarmupImageSize / 4, hi = WarmupImageSize * 3 / 4;
+            for (int y = 0; y < WarmupImageSize; y++)
+                for (int x = 0; x < WarmupImageSize; x++)
+                    pixels[y * WarmupImageSize + x] = (x >= lo && x < hi && y >= lo && y < hi) ? black : white;
+            tex.SetPixels32(pixels);
+            tex.Apply();
+            byte[] png = tex.EncodeToPNG();
+            Destroy(tex);
+            return png;
+        }
+
         /// <summary>
         /// 스케치 한 쌍으로 이미지 생성을 요청한다.
         /// </summary>
@@ -197,8 +272,13 @@ namespace CarDrawing.Generation
 
         private IEnumerator PollHistory(ComfyUiConfig cfg, string promptId, Action<ResultLocation, bool> onDone)
         {
-            using (UnityWebRequest req = UnityWebRequest.Get(cfg.baseUrl + "/history/" + promptId))
+            // 캐시버스터: 같은 URL을 반복 GET하면 UnityWebRequest/프록시가 "아직 결과 없음" 응답을 캐시해
+            // 완료 후에도 옛 응답을 돌려주는 문제가 실측됨(콜드 스타트 첫 생성이 감지 안 됨, 인수인계 §6).
+            // 매 폴링 URL에 타임스탬프를 붙이고 no-cache 헤더를 실어 항상 최신 상태를 받는다.
+            string url = $"{cfg.baseUrl}/history/{promptId}?t={DateTime.UtcNow.Ticks}";
+            using (UnityWebRequest req = UnityWebRequest.Get(url))
             {
+                req.SetRequestHeader("Cache-Control", "no-cache");
                 req.timeout = RequestTimeoutSeconds;
                 yield return req.SendWebRequest();
 

@@ -4,6 +4,7 @@ using CarDrawing.Drawing;
 using CarDrawing.Results;
 using UnityEngine;
 using UnityEngine.UI;
+using NaughtyAttributes;
 
 namespace CarDrawing.UI
 {
@@ -28,6 +29,8 @@ namespace CarDrawing.UI
         [SerializeField] private RectTransform paletteContainer;
         /// <summary>도구 버튼(굵기/지우개/undo/지우기/완성)이 생성될 컨테이너 (가로 배치)</summary>
         [SerializeField] private RectTransform toolbarContainer;
+
+        [SerializeField] private Button done;
 
         /// <summary>고정 색상 팔레트. 계획서 6장: 고정 색상 8~12개</summary>
         private static readonly Color[] Palette =
@@ -101,6 +104,7 @@ namespace CarDrawing.UI
             Debug.Log($"[DrawingPanel] 스케치 저장 완료: {linePath} / {colorPath}");
         }
 
+        [Button("Idle 팝업 표시")]
         /// <summary>방치 팝업을 표시한다 (AppFlowManager가 무입력 90초에 호출).</summary>
         public void ShowIdlePopup()
         {
@@ -118,11 +122,15 @@ namespace CarDrawing.UI
 
         private void BuildPalette()
         {
+            int index = 0;
             foreach (Color color in Palette)
             {
-                Button button = UiBuilder.CreateButton(paletteContainer, "", color);
+                // Button button = UiBuilder.CreateButton(paletteContainer, "", color);
+                Button button = paletteContainer.GetComponentsInChildren<Button>()[index];
+                button.image.color = color;
                 Color captured = color; // 클로저에 루프 변수 직접 캡처 방지
                 button.onClick.AddListener(() => SetColor(captured));
+                index++;
             }
         }
 
@@ -151,9 +159,10 @@ namespace CarDrawing.UI
             UiBuilder.CreateButton(toolbarContainer, TextLibrary.Get("drawing.tool.clear"), Color.white)
                 .onClick.AddListener(ClearAll);
 
-            Button done = UiBuilder.CreateButton(toolbarContainer, TextLibrary.Get("drawing.tool.done"),
-                new Color(0.35f, 0.75f, 0.45f));
-            done.onClick.AddListener(OnDoneClicked);
+            // Button done = UiBuilder.CreateButton(toolbarContainer, TextLibrary.Get("drawing.tool.done"),
+            //     new Color(0.35f, 0.75f, 0.45f));
+            
+            done.onClick.AddListener(OnDoneClicked); // 생성해둔 버튼으로 연결
         }
 
         private void OnDoneClicked()

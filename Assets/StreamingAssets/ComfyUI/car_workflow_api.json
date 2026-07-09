@@ -44,9 +44,9 @@
       "negative": ["4", 0],
       "control_net": ["8", 0],
       "image": ["7", 0],
-      "strength": 0.9,
+      "strength": 0.6,
       "start_percent": 0.0,
-      "end_percent": 1.0
+      "end_percent": 0.6
     }
   },
   "10": {
@@ -65,7 +65,7 @@
       "cfg": 7.0,
       "sampler_name": "dpmpp_2m",
       "scheduler": "karras",
-      "denoise": 0.7
+      "denoise": 0.5
     }
   },
   "12": {

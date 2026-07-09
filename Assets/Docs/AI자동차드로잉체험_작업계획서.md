@@ -212,9 +212,10 @@ LineLayer PNG ──> ControlNet Scribble ──> KSampler (img2img, denoise=스
 
 # 8. 스타일 프리셋
 
-* v1: **스타일 1개**(실사 자동차 렌더링)로 품질을 먼저 확보
-* v2: 3~4개로 확장 (예: 실사 / 카툰 / 사이버펑크 / 수채화)
-* 스타일은 코드가 아니라 **JSON 데이터**로 관리 (운영자 수정 가능)
+* 스타일 선택 화면은 **4종 슬롯**으로 구성: 실사 / 카툰 / 픽셀아트 / 채색
+  * **실사만 품질 검증 완료**. 카툰·픽셀아트·채색은 프롬프트·denoise가 임시값이라 품질 튜닝이 남았다 (인수인계 §5·§8)
+* 스타일은 코드가 아니라 **JSON 데이터**로 관리 (운영자 수정 가능). 각 스타일은 `thumbnail`에 예시 이미지 경로(StreamingAssets 기준)를 가진다
+* 화면 구성은 씬에 배치한 VerticalGroup 4개(각 예시 이미지 + 버튼)를 `StylePanelController.styleGroups`에 순서대로 연결. Styles.json 순서 = 슬롯 순서, 스타일 수보다 많은 슬롯은 자동 숨김
 
 ```json
 {
@@ -225,11 +226,13 @@ LineLayer PNG ──> ControlNet Scribble ──> KSampler (img2img, denoise=스
       "prompt": "a photorealistic car, studio lighting, ...",
       "negativePrompt": "...",
       "denoise": 0.7,
-      "thumbnail": "realistic.png"
+      "thumbnail": "StyleExamples/realistic.png"
     }
   ]
 }
 ```
+
+`thumbnail`은 스타일 버튼에 보여줄 **예시 결과 이미지**의 경로(StreamingAssets 기준)다. 파일이 없으면 씬에 배치한 임시 이미지를 그대로 둔다.
 
 ---
 
@@ -417,3 +420,4 @@ Assets/
 | --- | --- | --- |
 | 2026-07-08 | 전체 | 최초 작성 (그릴링 세션에서 확정된 설계 반영) |
 | 2026-07-09 | 4장 | 스타일 선택 화면에 무입력 60초 → 대기 복귀 추가 (그리기/결과만 있던 방치 정책의 빈틈 — 스타일 화면에서 이탈하면 영구 대기하던 문제) |
+| 2026-07-09 | 8장 | 스타일을 v1 1종에서 **4종 슬롯(실사/카툰/픽셀아트/채색)**으로 변경. 실사만 품질 검증됨, 나머지 3종은 프롬프트·denoise 임시값(튜닝 필요). 스타일 화면 UI를 런타임 생성에서 **씬 배치 VerticalGroup 연결** 방식으로 전환 (예시 이미지 + 버튼, thumbnail 경로는 StreamingAssets) |

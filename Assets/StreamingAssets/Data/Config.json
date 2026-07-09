@@ -3,7 +3,7 @@
     "baseUrl": "http://127.0.0.1:8188",
     "workflowPath": "ComfyUI/car_workflow_api.json",
     "pollIntervalSeconds": 0.5,
-    "generateTimeoutSeconds": 30,
+    "generateTimeoutSeconds": 45,
     "submitMaxRetries": 1
   },
   "timing": {

@@ -102,7 +102,7 @@ AI자동차드로잉체험.unity
 | `Generation/ComfyUIClient.cs` | 업로드 → 워크플로 치환 제출(검증 오류 재시도 1회) → 0.5초 폴링 → 결과 다운로드. 실패는 콜백으로만 보고 |
 | `UI/UiBuilder.cs` | 런타임 uGUI 생성 공용 헬퍼 (패널들이 공유) |
 | `UI/AttractPanelController.cs` | 대기 화면 (전체 화면 클릭 시작, 문구 깜빡임) |
-| `UI/StylePanelController.cs` | 스타일 선택 (스케치 미리보기 + Styles.json 버튼) |
+| `UI/StylePanelController.cs` | 스타일 선택. 씬 배치 4슬롯(VerticalGroup) 방식으로 전환됨 (아래 「StylePanel 씬 배치 전환」 참조) |
 | `UI/GeneratingPanelController.cs` | 생성 중 연출 (스케치 + 말줄임표) / 실패 사과 문구 |
 | `UI/ResultPanelController.cs` | 스케치 vs 완성본 비교 + [다시 그리기]. QR·전시 버튼은 ④에서 |
 
@@ -113,7 +113,8 @@ AI자동차드로잉체험.unity
 ```
 KioskCanvas
 ├── DrawingPanel (기존)
-├── AttractPanel / StylePanel / GeneratingPanel / ResultPanel  ← 신규 (UI는 런타임 생성)
+├── AttractPanel / GeneratingPanel / ResultPanel  ← 신규 (UI는 런타임 생성)
+├── StylePanel  ← 신규, UI는 씬 배치(TMP) — 런타임 생성 아님
 AppFlow  ← 신규 (AppFlowManager + IdleWatcher + ComfyUIClient, 참조 인스펙터 배선 완료)
 ```
 
@@ -125,6 +126,16 @@ AppFlow  ← 신규 (AppFlowManager + IdleWatcher + ComfyUIClient, 참조 인스
 - 방치 정책 실동작: 그리기 90초 무입력 → 팝업 → 30초 무응답 → 대기 복귀 확인
 - 실패 경로 실동작: 콜드 부팅 첫 생성 30초 타임아웃 → 사과 문구 → 대기 복귀, 앱 계속 동작
 
+### 마일스톤 ③ 후속 — StylePanel 씬 배치 전환 (2026-07-09)
+
+스타일 화면 UI를 런타임 생성에서 **씬 배치 4슬롯** 방식으로 전환 (DrawingPanel과 같은 방향).
+
+- 씬 구조: `StylePanel > BG/Title/GridGroup`, GridGroup 아래 `VerticalGroup ×4`, 각 슬롯 = `ExampleImg(Image) + SelcetBtn(Button > Text(TMP))`
+- `StylePanelController` 재작성: `styleGroups`(VerticalGroup 4개)를 Styles.json 순서대로 연결, 각 슬롯의 예시 이미지·버튼·라벨을 이름/타입으로 찾아 채움. 스타일 수 < 슬롯 수면 남는 슬롯 자동 숨김
+- 데이터: Styles.json 4종(실사/카툰/픽셀아트/채색, thumbnail=`StyleExamples/<id>.png`), Texts.json에 `style.<id>` 라벨 키 추가. 실사 예시 이미지는 이전 생성 결과를 재활용해 배치
+- **검증(플레이 실측)**: 제목·라벨 4종 정상 주입, 실사 슬롯 예시 이미지 표시, 실사 클릭 → Generating 전환 확인 (스크린샷 확인)
+- **주의**: TMP 라벨은 Awake 아닌 Start에서 설정해야 반영됨(인수인계 §6), 예시 이미지는 Image.color=white로 되돌려야 안 검게 나옴
+
 ---
 
 ## 2. 알려진 이슈 / 메모
@@ -132,8 +143,11 @@ AppFlow  ← 신규 (AppFlowManager + IdleWatcher + ComfyUIClient, 참조 인스
 | 항목 | 내용 | 대응 |
 | --- | --- | --- |
 | ComfyUI 첫 제출 검증 오류 | 업로드 직후 첫 `/prompt` 제출에서 `Invalid image file` 1회 발생, 재시도로 해결 | ✅ 해소 — ComfyUIClient에 제출 재시도 1회 내장 (Config `submitMaxRetries`) |
-| 첫 생성 지연 | **콜드 부팅 직후 첫 생성은 30초를 초과** 실측 (2026-07-09, 타임아웃 발생. 워밍업 후엔 정상) | 앱 시작 시 워밍업 생성 1회 실행 예정 (⑤). 그 전까지 첫 관람객이 사과 화면을 볼 수 있음 |
+| ~~첫 생성이 타임아웃(첫 이미지 안 나옴)~~ **해결됨(2026-07-09)** | 원인 2개: ①콜드 모델 로딩 31.66초 > 타임아웃 30초, ②폴링 캐싱으로 첫 생성 완료 미감지. **대응 완료**: `ComfyUIClient.Warmup()`(시작 시 예열, 3회 재시도) + PollHistory 캐시버스터·no-cache + 타임아웃 45초. 콜드 재시작 실측으로 워밍업 첫 시도 완료 + 실제 생성 Result 도달 확인. 상세 인수인계 §6 |
 | 결과 화면 미완 | QR 코드·[전시장에 내 작품 걸기] 버튼 없음 | ④에서 ResultPanel에 추가 |
+| 스타일 예시 이미지 3종 없음 | 카툰/픽셀아트/채색 슬롯의 예시 이미지 미제작 (실사만 있음) | 각 스타일로 실제 생성해 `StreamingAssets/StyleExamples/<id>.png`로 저장하면 자동 반영 |
+| 스타일 3종 프롬프트 임시값 | 카툰/픽셀아트/채색 프롬프트·denoise 미검증 | 인수인계 §5 순서대로 스타일별 튜닝 필요 |
+| 엉성한 그림 아티팩트 → **재발·재수정(2026-07-09 저녁)** | 바퀴 이상/없음·문 이상·차 모양 붕괴 재발. **원인: ControlNet 0.35/0.6 튜닝이 문서에만 있고 워크플로 파일엔 0.9/1.0으로 남아 있었음** + 실사 프롬프트의 "isometric view of a boxy car"(낙서 시점과 충돌) + 부정 프롬프트 "floor, shadow"(바퀴 접지 삭제) | 대응 완료: 워크플로 노드 9에 **strength 0.35 / end_percent 0.6 실반영**, 실사 프롬프트에서 isometric 제거·four wheels 강조·부정 프롬프트에 바퀴 이상 계열 추가, **실사 denoise 0.8**(우선순위 변경: 모양 정상 > 색 보존, 장난감풍 허용). 플레이 모드 재검증 필요 (인수인계 §5) |
 | 도구 UI 임시 생성 | 팔레트/버튼이 런타임 코드 생성 (기본 uGUI 모양) | 디자인 리소스 확보 후 프리팹 교체 |
 | 프로젝트 정리 | 이전 프로젝트(지구환경코딩) 스크립트·씬 삭제가 워킹 트리에 미커밋 상태 | clean slate 커밋으로 정리 필요 |
 
