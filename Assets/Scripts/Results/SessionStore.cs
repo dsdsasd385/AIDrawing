@@ -58,5 +58,37 @@ namespace CarDrawing.Results
             File.WriteAllBytes(path, resultPng);
             return path;
         }
+
+        /// <summary>세션의 결과 이미지 경로 (Sessions 폴더 기준). 파일 존재는 보장하지 않는다</summary>
+        public static string ResultPath(string sessionId) => Path.Combine(SessionsDir, sessionId + "_result.png");
+        /// <summary>세션의 스케치(색 레이어) 경로. VLM 필터가 낙서 원본을 검사할 때 쓴다</summary>
+        public static string SketchPath(string sessionId) => Path.Combine(SessionsDir, sessionId + "_sketch.png");
+
+        /// <summary>
+        /// 결과 이미지를 갤러리 폴더로 복사한다 (opt-in + 필터 통과 작품, 계획서 9-3).
+        /// GallerySlideshow가 폴더를 감시하므로 복사만으로 전시에 반영된다.
+        /// </summary>
+        /// <param name="sessionId">세션 ID</param>
+        /// <returns>갤러리에 복사된 파일 경로. 원본이 없으면 null</returns>
+        public static string AddToGallery(string sessionId) => CopyResultTo(GalleryDir, sessionId);
+
+        /// <summary>
+        /// 결과 이미지를 격리 폴더로 복사한다 (필터에 걸린 opt-in 작품, 계획서 10장).
+        /// 관리자 모드에서 갤러리로 복원할 수 있다.
+        /// </summary>
+        /// <param name="sessionId">세션 ID</param>
+        /// <returns>격리 폴더에 복사된 파일 경로. 원본이 없으면 null</returns>
+        public static string AddToQuarantine(string sessionId) => CopyResultTo(QuarantineDir, sessionId);
+
+        // 결과 PNG를 대상 폴더로 복사한다. 파일명을 세션 ID 그대로 유지해 Sessions와 추적이 이어지게 한다
+        private static string CopyResultTo(string dir, string sessionId)
+        {
+            string source = ResultPath(sessionId);
+            if (!File.Exists(source)) return null;
+            Directory.CreateDirectory(dir);
+            string dest = Path.Combine(dir, sessionId + "_result.png");
+            File.Copy(source, dest, true);
+            return dest;
+        }
     }
 }

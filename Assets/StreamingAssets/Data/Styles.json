@@ -30,7 +30,7 @@
       "prompt": "simple flat color car illustration, minimal shading, clean thick outlines, soft pastel colors, vector style",
       "negativePrompt": "photorealistic, photo, complex shading, blurry, lowres, text, watermark, deformed wheels",
       "denoise": 0.7,
-      "thumbnail": "StyleExamples/simplecolor.png"
+      "thumbnail": "StyleExamples/clayStyle.png"
     }
   ]
 }

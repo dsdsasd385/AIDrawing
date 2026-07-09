@@ -37,19 +37,42 @@ namespace CarDrawing.Core
         public float errorNoticeSeconds = 4f;
     }
 
-    /// <summary>GCS 업로드 설정 (④에서 사용, 계획서 9장)</summary>
+    /// <summary>GCS 업로드 설정 (계획서 9-2). 버킷명·키가 비어 있으면 업로드/QR이 자동 비활성화된다</summary>
     [Serializable]
     public class GcsConfig
     {
+        /// <summary>공개 버킷 이름. 비어 있으면 QR 기능 전체가 꺼진다</summary>
         public string bucketName = "";
+        /// <summary>서비스 계정 키 JSON 경로. 절대 경로 또는 StreamingAssets 기준 상대 경로</summary>
         public string keyFilePath = "";
+        /// <summary>업로드 요청 타임아웃(초). 초과 시 QR만 숨기고 체험은 계속</summary>
+        public float uploadTimeoutSeconds = 15f;
     }
 
-    /// <summary>VLM 필터 설정 (④에서 사용, 계획서 10장)</summary>
+    /// <summary>VLM 필터 설정 (계획서 10장). 로컬 VLM 서버(OpenAI 호환 API)를 호출한다</summary>
     [Serializable]
     public class FilterConfig
     {
+        /// <summary>필터 사용 여부. 꺼져 있으면 opt-in 작품이 곧장 갤러리로 간다</summary>
         public bool enabled = false;
+        /// <summary>OpenAI 호환 chat completions 엔드포인트 (예: Ollama, llama.cpp 서버)</summary>
+        public string endpoint = "http://127.0.0.1:11434/v1/chat/completions";
+        /// <summary>사용할 VLM 모델 이름 (예: moondream, qwen2-vl)</summary>
+        public string model = "moondream";
+        /// <summary>판정 요청 타임아웃(초). 초과·실패 시 보수적으로 격리(계획서 10장 판정 정책)</summary>
+        public float timeoutSeconds = 20f;
+    }
+
+    /// <summary>갤러리 슬라이드쇼 설정 (계획서 5장 Display 2)</summary>
+    [Serializable]
+    public class GalleryConfig
+    {
+        /// <summary>Display 2 슬라이드 전환 간격(초)</summary>
+        public float slideIntervalSeconds = 8f;
+        /// <summary>Gallery 폴더 재검색 간격(초). 새 작품 반영 주기</summary>
+        public float rescanIntervalSeconds = 5f;
+        /// <summary>대기 화면 미니 슬라이드쇼 전환 간격(초)</summary>
+        public float attractSlideIntervalSeconds = 5f;
     }
 
     /// <summary>앱 전체 설정 묶음. StreamingAssets/Data/Config.json과 1:1 대응</summary>
@@ -60,6 +83,7 @@ namespace CarDrawing.Core
         public TimingConfig timing = new TimingConfig();
         public GcsConfig gcs = new GcsConfig();
         public FilterConfig filter = new FilterConfig();
+        public GalleryConfig gallery = new GalleryConfig();
     }
 
     /// <summary>

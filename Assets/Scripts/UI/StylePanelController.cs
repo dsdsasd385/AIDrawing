@@ -90,6 +90,10 @@ namespace CarDrawing.UI
                 Sprite sprite = LoadExampleSprite(style.thumbnail);
                 if (sprite != null)
                 {
+                    var Rect = exampleImage.GetComponent<RectTransform>();
+
+                    Rect.sizeDelta = new Vector2(550, 300); // 예시 이미지 크기 고정 (씬 배치 시 임시 이미지 크기와 달라도 됨)
+
                     exampleImage.sprite = sprite;
                     // 씬의 임시 이미지는 색이 검정일 수 있어 스프라이트가 검게 물든다 — 흰색으로 되돌린다
                     exampleImage.color = Color.white;
@@ -141,8 +145,9 @@ namespace CarDrawing.UI
                     return null;
                 }
 
-                var tex = new Texture2D(2, 2);
+                var tex = new Texture2D(2, 2);                
                 tex.LoadImage(File.ReadAllBytes(full)); // 크기는 LoadImage가 자동 조정
+                
                 return Sprite.Create(tex, new Rect(0, 0, tex.width, tex.height), new Vector2(0.5f, 0.5f));
             }
             catch (Exception e)
