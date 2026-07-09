@@ -1,6 +1,6 @@
 # AI 자동차 드로잉 체험 — 인수인계 문서
 
-> 최종 갱신: 2026-07-08
+> 최종 갱신: 2026-07-09
 > 새 담당자(개발자 또는 AI 에이전트)가 이 문서 하나로 환경을 재구성하고 작업을 이어받을 수 있도록 작성한다.
 
 ## 문서 3종의 역할과 갱신 시점
@@ -30,6 +30,7 @@
 | 항목 | 요구사항 | 비고 |
 | --- | --- | --- |
 | Unity | **2022.3.62f3 LTS** | uGUI 기반, TMP 미사용 (한글 폰트는 LegacyRuntime 동적 폰트) |
+| Newtonsoft JSON | `com.unity.nuget.newtonsoft-json` 3.2.2 (UPM) | 워크플로 JSON 노드 치환·Texts.json 파싱용. JsonUtility는 동적 JSON을 못 다뤄서 추가 (2026-07-09) |
 | GPU | NVIDIA 8GB VRAM 이상 | 현 개발 PC: RTX 3060 8GB. **8GB 전제로 SD 1.5를 선택**했으므로 GPU가 더 좋아져도 계획서 2장 근거를 먼저 읽을 것 |
 | Python | 3.12.x | ComfyUI venv용 (Unity와 무관) |
 | 디스크 | ComfyUI + 모델 약 10GB | |
@@ -67,12 +68,16 @@ venv\Scripts\pip install -r requirements.txt
 ```
 Assets/Scripts/
 ├── Drawing/      캔버스. DrawingCanvas가 핵심 (이중 RenderTexture)
-├── Generation/   ComfyUI 연동 (③에서 작성 예정)
-├── Results/      저장(SessionStore)·업로드·QR·필터 (일부 ③④에서 작성 예정)
+├── Generation/   ComfyUI 연동 (ComfyUIClient·StyleLibrary)
+├── Results/      저장(SessionStore). 업로드·QR·필터는 ④에서 작성 예정
 ├── Gallery/      Display 2 슬라이드쇼 (④에서 작성 예정)
-├── Core/         앱 흐름·설정·로그 (③에서 작성 예정)
-└── UI/           패널 컨트롤러들
+├── Core/         AppFlowManager(상태머신)·ConfigManager·TextLibrary·LogManager·IdleWatcher
+└── UI/           패널 컨트롤러 5종 + UiBuilder(런타임 uGUI 공용 헬퍼)
 ```
+
+패널 전환은 `Core/AppFlowManager`가 GameObject 활성/비활성으로 제어한다.
+패널 UI는 각 컨트롤러의 Awake에서 런타임 생성 — 씬에는 빈 패널 오브젝트만 있다 (§6 함정 참조).
+문구·시간·스타일은 전부 `StreamingAssets/Data/*.json` (Config/Texts/Styles) — 코드에 문구를 넣지 말 것.
 
 데이터 흐름 (완성 기준):
 
@@ -129,6 +134,9 @@ Unity 클라이언트가 실행 시 치환하는(할) 필드 — **노드 ID를 
 | **PS 5.1에서 JSON 만들 때** | `Out-File`은 BOM을 붙여 unity-mcp-cli가 거부. `[System.IO.File]::WriteAllText` 사용, 문자열은 `[string]` 캐스팅 |
 | **씬 빌드 인덱스** | `AI자동차드로잉체험.unity`가 Build Settings에 아직 없음. 빌드 전 등록 필요 |
 | **도구 버튼은 런타임 생성** | DrawingPanelController가 팔레트·버튼을 코드로 만든다. 씬에서 버튼이 안 보여도 정상. 디자인 리소스가 나오면 프리팹 방식으로 교체 예정 |
+| **패널 UI도 런타임 생성** | Attract/Style/Generating/Result 패널의 배경·텍스트·버튼은 각 컨트롤러 Awake에서 생성. 씬의 패널 오브젝트는 비어 보이는 게 정상. 버튼 GameObject 이름 = Texts.json 라벨 문구라서 문구를 바꾸면 `GameObject.Find` 경로도 바뀐다 (테스트 스크립트 주의) |
+| **콜드 부팅 첫 생성은 30초 초과** | 서버 프로세스를 막 띄운 직후의 첫 생성은 모델 디스크 로딩 포함 30초 타임아웃을 넘겨 실패할 수 있다 (실측). ⑤의 워밍업 생성이 필수인 이유. 개발 중엔 실패 후 한 번 더 시도하면 됨 |
+| **에디터 게임 뷰 클릭 주의** | 대기 화면은 화면 전체가 시작 버튼이라, 플레이 중 게임 뷰를 클릭만 해도 그리기 화면으로 넘어간다. 상태 꼬임이 아니라 정상 동작 |
 
 ---
 
@@ -143,7 +151,7 @@ Unity 클라이언트가 실행 시 치환하는(할) 필드 — **노드 ID를 
 
 # 8. 미결 사항 체크리스트
 
-- [ ] 마일스톤 ③~⑤ (작업현황 문서의 "다음 작업" 참조)
+- [ ] 마일스톤 ④~⑤ (작업현황 문서의 "다음 작업" 참조)
 - [ ] 이전 프로젝트 삭제분 clean slate 커밋 정리
 - [ ] GCS 버킷·서비스 계정 생성 (7장)
 - [ ] VLM 필터 모델 선정·검증 (7장)

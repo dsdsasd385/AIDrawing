@@ -1,0 +1,23 @@
+{
+  "comfyUi": {
+    "baseUrl": "http://127.0.0.1:8188",
+    "workflowPath": "ComfyUI/car_workflow_api.json",
+    "pollIntervalSeconds": 0.5,
+    "generateTimeoutSeconds": 30,
+    "submitMaxRetries": 1
+  },
+  "timing": {
+    "idlePopupSeconds": 90,
+    "idlePopupGraceSeconds": 30,
+    "styleTimeoutSeconds": 60,
+    "resultReturnSeconds": 60,
+    "errorNoticeSeconds": 4
+  },
+  "gcs": {
+    "bucketName": "",
+    "keyFilePath": ""
+  },
+  "filter": {
+    "enabled": false
+  }
+}

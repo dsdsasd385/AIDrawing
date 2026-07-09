@@ -1,0 +1,26 @@
+{
+  "attract.title": "AI 자동차 드로잉 체험",
+  "attract.subtitle": "내가 그린 자동차가 진짜 사진처럼!",
+  "attract.start": "화면을 클릭해 시작하세요",
+
+  "drawing.title": "자동차를 그려보세요!",
+  "drawing.tool.penThin": "가는 펜",
+  "drawing.tool.penMid": "중간 펜",
+  "drawing.tool.penThick": "굵은 펜",
+  "drawing.tool.eraser": "지우개",
+  "drawing.tool.undo": "되돌리기",
+  "drawing.tool.clear": "전체 지우기",
+  "drawing.tool.done": "완성!",
+  "drawing.idle.message": "계속 그리시겠어요?",
+  "drawing.idle.continue": "네, 계속 그릴래요!",
+
+  "style.title": "어떤 스타일로 완성할까요?",
+
+  "generating.message": "AI가 그림을 완성하고 있어요",
+  "generating.error": "죄송해요, 그림을 완성하지 못했어요.\n잠시 후 다시 도전해 주세요!",
+
+  "result.title": "작품이 완성됐어요!",
+  "result.sketchLabel": "내가 그린 그림",
+  "result.resultLabel": "AI가 완성한 그림",
+  "result.retry": "다시 그리기"
+}

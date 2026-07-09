@@ -1,7 +1,7 @@
 # AI 자동차 드로잉 체험 — 작업 현황
 
 > 기준 문서: [작업계획서](AI자동차드로잉체험_작업계획서.md) · 환경/함정: [인수인계](AI자동차드로잉체험_인수인계.md)
-> 최종 갱신: 2026-07-08
+> 최종 갱신: 2026-07-09
 >
 > **갱신 규칙**: 이 문서는 **모든 작업 세션이 끝날 때마다** 갱신한다. 절차는 맨 아래 [5. 문서 갱신 절차](#5-문서-갱신-절차-작업-세션-종료-시) — 세 문서를 함께 점검하는 체크리스트가 있다.
 
@@ -13,8 +13,8 @@
 | --- | --- | --- |
 | ① | ComfyUI 파이프라인 검증 (설치·모델·워크플로·생성 테스트) | ✅ 완료 (2회차 7.2초, 목표 4~8초 달성) |
 | ② | 그리기 캔버스 (이중 텍스처 + 도구 + PNG 저장) | ✅ 완료 (플레이 모드 실측 검증) |
-| ③ | 전체 흐름 연결 (패널 상태머신 + ComfyUI 연동 + 시간 정책) | ⬜ 예정 (다음 작업) |
-| ④ | 갤러리(Display 2) + QR(GCS) + VLM 필터 + opt-in | ⬜ 예정 |
+| ③ | 전체 흐름 연결 (패널 상태머신 + ComfyUI 연동 + 시간 정책) | ✅ 완료 (실생성 포함 1사이클 완주) |
+| ④ | 갤러리(Display 2) + QR(GCS) + VLM 필터 + opt-in | ⬜ 예정 (다음 작업) |
 | ⑤ | 운영 안정화 (자동 시작·워치독·키오스크·관리자) + 스타일 확장·품질 튜닝 | ⬜ 예정 |
 
 ---
@@ -87,35 +87,77 @@ AI자동차드로잉체험.unity
   - `<세션ID>_line.png` — 색과 무관하게 전부 검정 선만 (ControlNet 입력)
   - `<세션ID>_sketch.png` — 색 포함 그림 (img2img 입력)
 
+### 마일스톤 ③ — 전체 흐름 연결 (2026-07-09)
+
+#### 신규 스크립트 (Assets/Scripts)
+
+| 파일 | 역할 |
+| --- | --- |
+| `Core/AppFlowManager.cs` | 패널 상태머신 (대기→그리기→스타일→생성→결과→복귀). 세션 저장·생성 요청 조율, 시간 정책 집행 |
+| `Core/ConfigManager.cs` | `Data/Config.json` 로드 (ComfyUI 주소·시간 정책·GCS·필터). 파일 없어도 기본값으로 동작 |
+| `Core/TextLibrary.cs` | `Data/Texts.json` 화면 문구 사전. 키 없으면 키 자체 반환 (빈 화면 방지) |
+| `Core/LogManager.cs` | `Logs/yyyyMMdd.log` 파일 로그 + Unity Error/Exception 자동 수집 훅 |
+| `Core/IdleWatcher.cs` | 무입력 시간 측정 (마우스 이동·클릭·키) |
+| `Generation/StyleLibrary.cs` | `Data/Styles.json` 스타일 프리셋 로드 (v1 실사 1종, 폴백 내장) |
+| `Generation/ComfyUIClient.cs` | 업로드 → 워크플로 치환 제출(검증 오류 재시도 1회) → 0.5초 폴링 → 결과 다운로드. 실패는 콜백으로만 보고 |
+| `UI/UiBuilder.cs` | 런타임 uGUI 생성 공용 헬퍼 (패널들이 공유) |
+| `UI/AttractPanelController.cs` | 대기 화면 (전체 화면 클릭 시작, 문구 깜빡임) |
+| `UI/StylePanelController.cs` | 스타일 선택 (스케치 미리보기 + Styles.json 버튼) |
+| `UI/GeneratingPanelController.cs` | 생성 중 연출 (스케치 + 말줄임표) / 실패 사과 문구 |
+| `UI/ResultPanelController.cs` | 스케치 vs 완성본 비교 + [다시 그리기]. QR·전시 버튼은 ④에서 |
+
+기존 변경: `DrawingPanelController`에 CompleteRequested/ContinueRequested 이벤트, 방치 팝업, 도구 문구 Texts.json화. 데이터 파일 3종 신설 (`StreamingAssets/Data/Config.json`, `Styles.json`, `Texts.json`).
+
+#### 씬 구성 변경
+
+```
+KioskCanvas
+├── DrawingPanel (기존)
+├── AttractPanel / StylePanel / GeneratingPanel / ResultPanel  ← 신규 (UI는 런타임 생성)
+AppFlow  ← 신규 (AppFlowManager + IdleWatcher + ComfyUIClient, 참조 인스펙터 배선 완료)
+```
+
+#### 검증 결과 (2026-07-09 플레이 모드 실측)
+
+- 전체 사이클 완주: 대기 클릭 → 그리기(캔버스 초기화 확인) → [완성!] → 스타일 미리보기 → [실사] → 생성(워밍업 후 정상 완료) → 결과 비교 표시 → [다시 그리기](그림 유지 확인)
+- 결과 품질: 스케치의 측면 뷰·창문·바퀴 위치와 빨간 차체·하늘색 창문이 결과에 정확히 반영
+- 저장 확인: `Sessions/`에 `_line.png`(9KB) / `_sketch.png`(9KB) / `_result.png`(177KB) 3종
+- 방치 정책 실동작: 그리기 90초 무입력 → 팝업 → 30초 무응답 → 대기 복귀 확인
+- 실패 경로 실동작: 콜드 부팅 첫 생성 30초 타임아웃 → 사과 문구 → 대기 복귀, 앱 계속 동작
+
 ---
 
 ## 2. 알려진 이슈 / 메모
 
 | 항목 | 내용 | 대응 |
 | --- | --- | --- |
-| ComfyUI 첫 제출 검증 오류 | 업로드 직후 첫 `/prompt` 제출에서 `Invalid image file` 1회 발생, 재시도로 해결 | ComfyUIClient(③)에 제출 재시도 1회 내장 예정 |
-| 첫 생성 지연 | 서버 기동 후 첫 생성은 모델 로딩 포함 ~11초 | 앱 시작 시 워밍업 생성 1회 실행 예정 (⑤) |
+| ComfyUI 첫 제출 검증 오류 | 업로드 직후 첫 `/prompt` 제출에서 `Invalid image file` 1회 발생, 재시도로 해결 | ✅ 해소 — ComfyUIClient에 제출 재시도 1회 내장 (Config `submitMaxRetries`) |
+| 첫 생성 지연 | **콜드 부팅 직후 첫 생성은 30초를 초과** 실측 (2026-07-09, 타임아웃 발생. 워밍업 후엔 정상) | 앱 시작 시 워밍업 생성 1회 실행 예정 (⑤). 그 전까지 첫 관람객이 사과 화면을 볼 수 있음 |
+| 결과 화면 미완 | QR 코드·[전시장에 내 작품 걸기] 버튼 없음 | ④에서 ResultPanel에 추가 |
 | 도구 UI 임시 생성 | 팔레트/버튼이 런타임 코드 생성 (기본 uGUI 모양) | 디자인 리소스 확보 후 프리팹 교체 |
 | 프로젝트 정리 | 이전 프로젝트(지구환경코딩) 스크립트·씬 삭제가 워킹 트리에 미커밋 상태 | clean slate 커밋으로 정리 필요 |
 
 ---
 
-## 3. 다음 작업 (마일스톤 ③ — 전체 흐름 연결)
+## 3. 다음 작업 (마일스톤 ④ — 갤러리 + QR + 필터)
 
-1. `Generation/ComfyUIClient.cs` — 이미지 업로드 → 워크플로 제출(검증 오류 재시도 1회) → 폴링 → 결과 다운로드 (UnityWebRequest, 타임아웃 30초)
-2. `Generation/StyleLibrary.cs` + `StreamingAssets/Data/Styles.json` — 스타일 = (프롬프트 + denoise) 데이터 관리 (v1은 실사 1종)
-3. `Core/AppFlowManager.cs` — 패널 상태머신: 대기 → 그리기 → 스타일 선택 → 생성 중 → 결과 → 복귀
-4. `Core/IdleWatcher.cs` — 방치 감지 (무입력 90초 팝업 + 30초 후 복귀), 결과 화면 60초 자동 복귀
-5. 나머지 패널 4종 (Attract / Style / Generating / Result) UI 구성
-6. 검증: 대기→그리기→생성→결과→복귀 1사이클 완주 (실제 생성 포함)
+1. `Gallery/GallerySlideshow.cs` — Display 2 전용 카메라 + Screen Space-Camera 캔버스, `Gallery/` 폴더 감시 슬라이드쇼 (계획서 5장)
+2. `Results/GcsUploader.cs` — `IResultUploader` 인터페이스 + GCS 구현 (실패해도 체험 계속), GCS 버킷·서비스 계정 생성 선행 (인수인계 §7)
+3. `Results/QrCodeView.cs` — 업로드 URL의 QR 생성·표시, 오프라인 시 자동 숨김
+4. `Results/ContentFilter.cs` — VLM 필터 (CPU 비동기), 모델 선정 선행 (Moondream2 / Qwen2-VL-2B급)
+5. ResultPanel에 QR 영역 + [전시장에 내 작품 걸기] 버튼 추가, opt-in → 필터 → Gallery/Quarantine 흐름
+6. AttractPanel에 미니 슬라이드쇼 추가 (계획서 5장)
+7. 검증: 더미/실데이터로 3경로(표시·QR·갤러리) 모두 동작
 
 ---
 
 ## 4. 실행 방법 (개발용)
 
-1. ComfyUI 서버: `Tools\run_comfyui.bat` 실행 (이미 켜져 있으면 생략)
-2. Unity에서 `Assets/Scenes/AI자동차드로잉체험.unity` 열고 플레이
-3. 그리기 → [완성!] 버튼 → `AppData\LocalLow\DefaultCompany\Practice01\Sessions\`에 PNG 2장 저장 확인
+1. ComfyUI 서버: `Tools\run_comfyui.bat` 실행 (이미 켜져 있으면 생략. 기동 후 준비까지 ~90초)
+2. Unity에서 `Assets/Scenes/AI자동차드로잉체험.unity` 열고 플레이 → 대기 화면이 뜬다
+3. 화면 클릭 → 그리기 → [완성!] → 스타일 선택 → 4~8초 후 결과 화면 (콜드 부팅 첫 생성은 타임아웃될 수 있음 — 한 번 더 시도)
+4. 산출물: `AppData\LocalLow\DefaultCompany\Practice01\Sessions\`에 `_line`/`_sketch`/`_result` PNG 3장
+5. 서버를 안 켜고 플레이하면 생성 실패 → 사과 문구 → 대기 복귀로 동작해야 정상 (예외로 죽지 않기)
 
 ---
 

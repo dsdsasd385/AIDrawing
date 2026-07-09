@@ -1,0 +1,12 @@
+{
+  "styles": [
+    {
+      "id": "realistic",
+      "name": "실사",
+      "prompt": "a photorealistic car, studio lighting, glossy paint, showroom background, high quality, detailed, 4k",
+      "negativePrompt": "sketch, drawing, cartoon, blurry, lowres, bad anatomy, text, watermark, deformed wheels",
+      "denoise": 0.7,
+      "thumbnail": "realistic.png"
+    }
+  ]
+}
