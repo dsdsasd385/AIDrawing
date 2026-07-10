@@ -152,6 +152,7 @@ GameObject:
   - component: {fileID: 83326192}
   - component: {fileID: 83326197}
   - component: {fileID: 83326196}
+  - component: {fileID: 83326198}
   m_Layer: 0
   m_Name: AppFlow
   m_TagString: Untagged
@@ -203,7 +204,8 @@ MonoBehaviour:
   canvas: {fileID: 625425419}
   comfyClient: {fileID: 83326192}
   idleWatcher: {fileID: 83326193}
-  uploader: {fileID: 0}
+  b2Uploader: {fileID: 0}
+  gcsUploader: {fileID: 0}
   contentFilter: {fileID: 0}
 --- !u!4 &83326195
 Transform:
@@ -242,6 +244,18 @@ MonoBehaviour:
   m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: 8124e6e71c6ed4549a5c7e7af41ac513, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+--- !u!114 &83326198
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 83326191}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 560fea5bfc691ee4e97bc2f076a30139, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
 --- !u!224 &435439052 stripped

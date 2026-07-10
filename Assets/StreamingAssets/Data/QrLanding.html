@@ -1,0 +1,31 @@
+<!DOCTYPE html>
+<!-- QR 랜딩 페이지 템플릿 (계획서 9-2).
+     B2Uploader가 {{IMAGE_URL}}을 결과 이미지 주소(토큰 포함)로 치환해 결과 PNG와 함께 업로드한다.
+     문구·디자인은 이 파일에서 자유롭게 수정 가능 — 코드 수정 불필요. -->
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>AI 자동차 드로잉 체험</title>
+<style>
+  body { margin: 0; background: #12141f; color: #eef1f8; font-family: sans-serif; text-align: center; }
+  .wrap { max-width: 640px; margin: 0 auto; padding: 28px 16px 40px; }
+  h1 { font-size: 1.35rem; margin: 6px 0 4px; }
+  .sub { color: #9aa3b8; margin: 0 0 18px; font-size: 0.95rem; }
+  img.result { width: 100%; border-radius: 12px; background: #fff; box-shadow: 0 6px 24px rgba(0,0,0,0.45); }
+  a.save { display: block; margin: 22px auto 12px; padding: 16px; background: #f2b13f; color: #1c1c1c;
+           font-size: 1.15rem; font-weight: bold; border-radius: 12px; text-decoration: none; }
+  a.save:active { background: #d99a28; }
+  .hint { color: #8a93a8; font-size: 0.85rem; line-height: 1.6; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>AI 자동차 드로잉 체험</h1>
+  <p class="sub">내가 그린 자동차, AI가 이렇게 완성했어요!</p>
+  <img class="result" src="{{IMAGE_URL}}" alt="AI가 완성한 자동차 그림">
+  <a class="save" href="{{IMAGE_URL}}" download="my-ai-car.png">이미지 저장하기</a>
+  <p class="hint">버튼이 동작하지 않으면 이미지를 길게 눌러 저장하세요.<br>이 링크는 7일 뒤 만료됩니다.</p>
+</div>
+</body>
+</html>

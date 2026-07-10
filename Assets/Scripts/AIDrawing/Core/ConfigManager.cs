@@ -52,6 +52,26 @@ namespace CarDrawing.Core
         public float uploadTimeoutSeconds = 15f;
     }
 
+    /// <summary>Backblaze B2 업로드 설정 (계획서 9-2, 2026-07-10 GCS에서 전환 — 카드 없는 영구 무료 티어).
+    /// 키 파일이 없으면 업로드/QR이 자동 비활성화된다. 버킷 정보는 버킷 제한 키(권장)의 authorize 응답이 제공</summary>
+    [Serializable]
+    public class B2Config
+    {
+        /// <summary>B2 키 JSON 경로 (keyId/applicationKey, 선택: bucketId/bucketName).
+        /// 절대 경로 또는 exe 옆(에디터: 프로젝트 루트) 기준 상대 경로 — 저장소·빌드에 싣지 않는다 (인수인계 §7)</summary>
+        public string keyFilePath = "Config/b2-key.json";
+        /// <summary>버킷 안 객체 이름 접두사 (폴더 역할)</summary>
+        public string objectPrefix = "cars/";
+        /// <summary>QR 다운로드 링크 유효 시간(초). B2 공개 버킷은 카드 등록이 필요해서 비공개 버킷 +
+        /// 만료형 다운로드 토큰으로 운영한다 (기본 604800 = 최대치 7일). 0이면 공개 버킷 가정(토큰 생략)</summary>
+        public int downloadAuthSeconds = 604800;
+        /// <summary>QR 랜딩 페이지(저장 버튼 포함) 템플릿의 StreamingAssets 기준 상대 경로.
+        /// 파일이 없으면 내장 최소 템플릿으로 폴백한다 (예외로 죽지 않기)</summary>
+        public string landingTemplatePath = "Data/QrLanding.html";
+        /// <summary>요청 타임아웃(초). 초과 시 QR만 숨기고 체험은 계속</summary>
+        public float uploadTimeoutSeconds = 15f;
+    }
+
     /// <summary>VLM 필터 설정 (계획서 10장). 로컬 VLM 서버(OpenAI 호환 API)를 호출한다</summary>
     [Serializable]
     public class FilterConfig
@@ -92,6 +112,7 @@ namespace CarDrawing.Core
     {
         public ComfyUiConfig comfyUi = new ComfyUiConfig();
         public TimingConfig timing = new TimingConfig();
+        public B2Config b2 = new B2Config();
         public GcsConfig gcs = new GcsConfig();
         public FilterConfig filter = new FilterConfig();
         public GalleryConfig gallery = new GalleryConfig();

@@ -41,8 +41,10 @@ namespace CarDrawing.Core
         [SerializeField] private ComfyUIClient comfyClient;
         /// <summary>무입력 시간 측정기</summary>
         [SerializeField] private IdleWatcher idleWatcher;
-        /// <summary>결과 업로더 (QR용, 계획서 9-2). 미설정이면 QR이 자동으로 숨는다</summary>
-        [SerializeField] private GcsUploader uploader;
+        /// <summary>기본 업로더 — Backblaze B2 (QR용, 계획서 9-2). 미설정이면 QR이 자동으로 숨는다</summary>
+        [SerializeField] private B2Uploader b2Uploader;
+        /// <summary>대안 업로더 — GCS. B2가 미설정일 때만 쓰인다</summary>
+        [SerializeField] private GcsUploader gcsUploader;
         /// <summary>갤러리 게이트 필터 (계획서 10장)</summary>
         [SerializeField] private ContentFilter contentFilter;
 
@@ -106,7 +108,8 @@ namespace CarDrawing.Core
             if (canvas == null) canvas = FindObjectOfType<DrawingCanvas>(true);
             if (comfyClient == null) comfyClient = FindObjectOfType<ComfyUIClient>(true);
             if (idleWatcher == null) idleWatcher = FindObjectOfType<IdleWatcher>(true);
-            if (uploader == null) uploader = FindObjectOfType<GcsUploader>(true);
+            if (b2Uploader == null) b2Uploader = FindObjectOfType<B2Uploader>(true);
+            if (gcsUploader == null) gcsUploader = FindObjectOfType<GcsUploader>(true);
             if (contentFilter == null) contentFilter = FindObjectOfType<ContentFilter>(true);
         }
 
@@ -257,7 +260,8 @@ namespace CarDrawing.Core
             // QR용 업로드 (계획서 9-2: 생성 직후 비동기, 실패해도 체험 계속).
             // 세션 ID를 붙잡아 두는 이유: 업로드가 끝났을 때 이미 다음 관람객 세션이면 QR을 붙이지 않아야 한다
             string uploadSessionId = _sessionId;
-            if (uploader != null && uploader.IsConfigured)
+            IResultUploader uploader = ActiveUploader;
+            if (uploader != null)
             {
                 uploader.Upload(uploadSessionId, resultPng, url =>
                 {
@@ -265,6 +269,17 @@ namespace CarDrawing.Core
                     if (_state != AppState.Result || _sessionId != uploadSessionId) return; // 늦게 온 결과는 버린다
                     resultPanel.ShowQr(url);
                 });
+            }
+        }
+
+        // 설정이 갖춰진 업로더를 고른다. 기본 B2(무료 티어), 대안 GCS — IResultUploader 계약 덕에 흐름은 동일
+        private IResultUploader ActiveUploader
+        {
+            get
+            {
+                if (b2Uploader != null && b2Uploader.IsConfigured) return b2Uploader;
+                if (gcsUploader != null && gcsUploader.IsConfigured) return gcsUploader;
+                return null;
             }
         }
 

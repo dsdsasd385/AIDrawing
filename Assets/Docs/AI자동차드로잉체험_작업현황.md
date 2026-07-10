@@ -14,7 +14,7 @@
 | ① | ComfyUI 파이프라인 검증 (설치·모델·워크플로·생성 테스트) | ✅ 완료 (2회차 7.2초, 목표 4~8초 달성) |
 | ② | 그리기 캔버스 (이중 텍스처 + 도구 + PNG 저장) | ✅ 완료 (플레이 모드 실측 검증) |
 | ③ | 전체 흐름 연결 (패널 상태머신 + ComfyUI 연동 + 시간 정책) | ✅ 완료 (실생성 포함 1사이클 완주) |
-| ④ | 갤러리(Display 2) + QR(GCS) + VLM 필터 + opt-in | 🔶 코드·씬 완료 (GCS 버킷 생성·VLM 모델 선정·플레이 검증 남음) |
+| ④ | 갤러리(Display 2) + QR(B2) + VLM 필터 + opt-in | 🔶 코드·씬·플레이 검증 완료 (B2 계정 개통 후 QR 실검증만 남음. VLM은 운영 결정 보류) |
 | ⑤ | 운영 안정화 (자동 시작·워치독·키오스크·관리자) + 스타일 확장·품질 튜닝 | ⬜ 예정 |
 
 ---
@@ -186,8 +186,16 @@ AppFlow         ← GcsUploader + ContentFilter 컴포넌트 추가 (AppFlowMana
 #### 검증 결과 (2026-07-10)
 
 - **QR 인코더 대조 검증 완료**: 강제 마스크 0~7 × 입력 4종(버전 1·5·9·10 — 16비트 카운트 경로 포함) 총 32개 행렬을 레퍼런스 구현(python-qrcode)과 MD5 대조 → **전부 일치**. 자동 마스크 선택도 2/4 동일(불일치 2건은 벌점 동점 처리 차이로 둘 다 유효한 QR)
-- 컴파일 오류 없음, 씬 저장 완료
-- **플레이 모드 통합 검증 미실시** — GCS 버킷·VLM 모델이 아직 없어 QR/필터는 "자동 숨김/격리 폴백" 경로만 확인 가능. 갤러리 3경로 검증은 §3 참조
+- **플레이 모드 검증 완료 (사용자 실측, 2026-07-10)**: 그리기→생성→결과→갤러리 신청→Display 2·대기 화면 슬라이드쇼 반영까지 문제없음. QR 자동 숨김(미설정) 확인
+
+### 마일스톤 ④ 후속 — QR 스토리지 GCS → Backblaze B2 전환 (2026-07-10)
+
+- 무료 클라우드 비교(웹 확인) 결과 **B2 채택**: 카드 등록 불필요 + 10GB 영구 무료 + 공개 URL 기본 제공. R2는 카드 필요 가능성·공개 도메인 제약, Supabase는 7일 무활동 일시정지로 무인 전시 부적합
+- `Results/B2Uploader.cs` 신규 (authorize → upload URL → 업로드 → 다운로드 토큰 → URL, 인증 24h 캐시 + 만료 401 재시도). `IResultUploader` 덕에 흐름 변화 없음
+- **버킷은 비공개 운영**: B2가 공개 버킷에 카드 등록을 요구함을 실측 → QR 링크에 만료형 다운로드 토큰(7일, `b2.downloadAuthSeconds`)을 붙이는 방식으로 카드 없이 해결 (계획서 9-2 변경 이력)
+- **QR = 저장 버튼이 있는 랜딩 페이지**: PNG+HTML을 같은 접두사로 업로드, 토큰 1개로 커버. 템플릿 `StreamingAssets/Data/QrLanding.html`. **B2 계정 개통 + CLI 종단 검증 완료 (2026-07-10)**: 버킷 `Practice01` 생성, 버킷 제한 키 발급·`Config/b2-key.json` 배치, 인증→PNG→토큰→HTML→랜딩 페이지/이미지 다운로드 모두 HTTP 200, QR URL 197자(인코더 한도 213바이트 내). 플레이 모드 QR 표시·폰 스캔 확인만 남음
+- AppFlowManager가 **B2 우선, GCS 폴백**으로 업로더 선택 (`ActiveUploader`). Config.json에 `b2` 섹션, 씬 AppFlow에 B2Uploader 추가
+- 같은 날 ComfyUI 기동 문제 해결: `run_comfyui.bat`이 UTF-8 한국어 주석 때문에 cmd(cp949)에서 통째로 깨지던 것 — **ASCII 전용 재작성** + 출력을 `ComfyUI\comfyui_run.log`로 기록 (인수인계 §6 함정 추가). Desktop 앱 불필요 확인
 
 ---
 
@@ -198,9 +206,8 @@ AppFlow         ← GcsUploader + ContentFilter 컴포넌트 추가 (AppFlowMana
 | ComfyUI 첫 제출 검증 오류 | 업로드 직후 첫 `/prompt` 제출에서 `Invalid image file` 1회 발생, 재시도로 해결 | ✅ 해소 — ComfyUIClient에 제출 재시도 1회 내장 (Config `submitMaxRetries`) |
 | ~~첫 생성이 타임아웃(첫 이미지 안 나옴)~~ **해결됨(2026-07-09)** | 원인 2개: ①콜드 모델 로딩 31.66초 > 타임아웃 30초, ②폴링 캐싱으로 첫 생성 완료 미감지. **대응 완료**: `ComfyUIClient.Warmup()`(시작 시 예열, 3회 재시도) + PollHistory 캐시버스터·no-cache + 타임아웃 45초. 콜드 재시작 실측으로 워밍업 첫 시도 완료 + 실제 생성 Result 도달 확인. 상세 인수인계 §6 |
 | ~~결과 화면 미완~~ **해소(2026-07-10)** | QR 코드·[전시장에 내 작품 걸기] 버튼 없음 | ✅ 해소 — ④에서 ResultPanel에 추가 완료 |
-| GCS 버킷·서비스 계정 미생성 | 코드는 완성 — 키가 없으면 QR이 자동 숨김으로 동작 | 버킷 생성 → 키를 `Config/gcs-key.json`에 배치 → Config.json `gcs.bucketName` 기입 (인수인계 §7) |
-| VLM 필터 모델 미선정 | 필터 코드는 완성(OpenAI 호환 API 호출), 기본값 `filter.enabled=false` — opt-in 작품이 곧장 갤러리로 감 | Ollama + Moondream2/Qwen2-VL-2B급 선정·검증 후 enabled 전환 (인수인계 §7) |
-| 마일스톤 ④ 플레이 검증 미실시 | 갤러리 3경로(표시·QR·갤러리) 플레이 실측 필요 | §3의 검증 절차 참조 |
+| B2 계정 미개통 | 코드(`B2Uploader`)는 완성 — 키가 없으면 QR이 자동 숨김으로 동작 (플레이 실측 확인) | 가입(카드 불필요) → 공개 버킷 + 버킷 제한 키 → `Config/b2-key.json` 배치 (절차: 인수인계 §7) |
+| VLM 필터 — 운영 결정 보류 | 필터 코드는 완성(OpenAI 호환 API 호출), 기본값 `filter.enabled=false` — opt-in 작품이 곧장 갤러리로 감. 상주 인력이 있으면 관리자 모드 사후 관리로 대체 가능 | 전시 운영 형태 확정 시 결정. 켜려면 Ollama + 모델 선정 (인수인계 §7) |
 | ~~스타일 예시 이미지 3종 없음~~ 해소 | `StyleExamples/`에 4종 PNG 배치됨 (cartoon/pixelart/clayStyle/realistic) | ✅ 해소 — 프롬프트 확정본으로 재생성해 교체하면 더 정확 (선택) |
 | ~~스타일 3종 프롬프트 임시값~~ **해소(2026-07-10)** | 카툰/픽셀아트/클레이 프롬프트·denoise 미검증 상태였음 | ✅ 해소 — 실사 구조로 강화 + ComfyUI API 직접 생성으로 4종 검증 (§1). 플레이 모드 통합 확인만 남음 |
 | 엉성한 그림 아티팩트 → **재발·재수정(2026-07-09 저녁)** | 바퀴 이상/없음·문 이상·차 모양 붕괴 재발. **원인: ControlNet 0.35/0.6 튜닝이 문서에만 있고 워크플로 파일엔 0.9/1.0으로 남아 있었음** + 실사 프롬프트의 "isometric view of a boxy car"(낙서 시점과 충돌) + 부정 프롬프트 "floor, shadow"(바퀴 접지 삭제) | 대응 완료: 워크플로 노드 9에 **strength 0.35 / end_percent 0.6 실반영**, 실사 프롬프트에서 isometric 제거·four wheels 강조·부정 프롬프트에 바퀴 이상 계열 추가, **실사 denoise 0.8**(우선순위 변경: 모양 정상 > 색 보존, 장난감풍 허용). 플레이 모드 재검증 필요 (인수인계 §5). **2026-07-10 또 재발 발견**: 파일에 strength 0.6으로 되돌아가 있어 0.35 재반영 (인수인계 §5 경고 참조) |
@@ -211,10 +218,9 @@ AppFlow         ← GcsUploader + ContentFilter 컴포넌트 추가 (AppFlowMana
 
 ## 3. 다음 작업 (마일스톤 ④ 마무리 → ⑤)
 
-1. **플레이 모드 검증 (외부 계정 없이 지금 가능)**: 그리기→생성→결과에서 ①QR 영역이 안 보이는지(미설정 자동 숨김) ②[전시장에 내 작품 걸기] 클릭 → `Gallery/`에 결과 복사 + Display 2(Game 뷰 탭 2개, §4)와 대기 화면 미니 슬라이드쇼에 반영되는지 ③스타일 4종 각 1회 생성(§1 프롬프트 확정 후 통합 확인 미실시분)
-2. **GCS 개통**: 버킷 생성(공개 읽기) + objectCreator 전용 서비스 계정 키 발급 → `<프로젝트 루트>/Config/gcs-key.json` 배치(이미 .gitignore 처리) → Config.json `gcs.bucketName` 기입 → 결과 화면 QR 표시·폰 스캔 다운로드 실측 (인수인계 §7)
-3. **VLM 필터 개통**: Ollama 설치 + Moondream2/Qwen2-VL-2B급 후보 비교(차량/부적절 판정 정확도, CPU 소요 시간) → Config.json `filter.model` 확정, `filter.enabled=true` → 정상/부적절 낙서로 Gallery/Quarantine 분기 실측
-4. 마일스톤 ⑤: 운영 안정화 (부팅 자동 시작·워치독·키오스크·관리자 모드) + Build Settings 씬 등록·빌드 검증
+1. **B2 계정 개통 + QR 실검증**: backblaze.com 가입(카드 불필요) → 공개 버킷 + 버킷 제한 키 발급 → `<프로젝트 루트>/Config/b2-key.json` 배치 → 결과 화면 QR 표시·폰 스캔 다운로드 실측 (절차: 인수인계 §7)
+2. **VLM 필터**: 운영 형태(상주 인력 유무) 확정 시 결정 — 켜기로 하면 Ollama + 모델 비교 후 `filter.enabled=true` → 정상/부적절 낙서로 Gallery/Quarantine 분기 실측
+3. **마일스톤 ⑤ 착수**: 운영 안정화 — 부팅 자동 시작(ComfyUI→앱 순), `ComfyUIWatchdog`(무응답 감지·재시작), 키오스크 전체화면, 관리자 모드(계획서 11장: 갤러리 관리·격리 복원·상태 확인), Build Settings 씬 등록 + Windows 빌드 검증
 
 ---
 
@@ -226,7 +232,7 @@ AppFlow         ← GcsUploader + ContentFilter 컴포넌트 추가 (AppFlowMana
 4. 산출물: `AppData\LocalLow\DefaultCompany\Practice01\Sessions\`에 `_line`/`_sketch`/`_result` PNG 3장
 5. 서버를 안 켜고 플레이하면 생성 실패 → 사과 문구 → 대기 복귀로 동작해야 정상 (예외로 죽지 않기)
 6. **갤러리(Display 2) 확인**: Game 뷰 탭을 2개 열고 각각 Display 1 / Display 2 지정 (계획서 5장, 빌드 불필요). 결과 화면에서 [전시장에 내 작품 걸기] 클릭 → `Gallery/` 폴더에 복사 → 몇 초 안에 Display 2와 대기 화면 미니 슬라이드쇼에 반영
-7. **QR 확인**: GCS 설정(인수인계 §7)이 된 경우에만 결과 화면 좌하단에 QR 표시 — 미설정이면 안 보이는 게 정상
+7. **QR 확인**: B2 키 배치(인수인계 §7)가 된 경우에만 결과 화면 좌하단에 QR 표시 — 미설정이면 안 보이는 게 정상
 
 ---
 

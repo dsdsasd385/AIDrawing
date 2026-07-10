@@ -53,15 +53,16 @@ namespace CarDrawing.UI
                 TextLibrary.Get("result.title"), 64, new Color(0.15f, 0.17f, 0.25f));
             UiBuilder.Place((RectTransform)title.transform, new Vector2(0, 430), new Vector2(1600, 90));
 
-            // 좌: 스케치, 우: AI 완성본 (비교 표시)
+            // 좌: 스케치, 우: AI 완성본 (비교 표시). 850×550 프레임 두 장 + 간격 40 = 가로 1740이라
+            // 중심을 ±445로 벌리고, 제목(y 430)과 안 겹치게 y 95에 둔다 (프레임 상단 370 < 제목 하단 385)
             _sketch = CreateLabeledImage(background.transform, "Sketch",
-                TextLibrary.Get("result.sketchLabel"), new Vector2(-390, 60));
+                TextLibrary.Get("result.sketchLabel"), new Vector2(-445, 95));
             _result = CreateLabeledImage(background.transform, "Result",
-                TextLibrary.Get("result.resultLabel"), new Vector2(390, 60));
+                TextLibrary.Get("result.resultLabel"), new Vector2(445, 95));
 
-            // QR 한 벌 (좌하단). 업로드가 완료될 때만 보인다
+            // QR 한 벌 (좌하단). 업로드가 완료될 때만 보인다. 라벨(캡션) 하단 -255보다 아래에서 시작
             Image qrFrame = UiBuilder.CreateImage(background.transform, "QrFrame", Color.white);
-            UiBuilder.Place((RectTransform)qrFrame.transform, new Vector2(-760, -370), new Vector2(210, 210));
+            UiBuilder.Place((RectTransform)qrFrame.transform, new Vector2(-780, -390), new Vector2(210, 210));
             _qrGroup = qrFrame.gameObject;
 
             _qrImage = UiBuilder.CreateRawImage(qrFrame.transform, "QrImage");
@@ -69,7 +70,7 @@ namespace CarDrawing.UI
 
             Text qrLabel = UiBuilder.CreateText(qrFrame.transform, "QrLabel",
                 TextLibrary.Get("result.qrLabel"), 24, new Color(0.25f, 0.28f, 0.35f));
-            UiBuilder.Place((RectTransform)qrLabel.transform, new Vector2(0, -130), new Vector2(320, 40));
+            UiBuilder.Place((RectTransform)qrLabel.transform, new Vector2(0, -125), new Vector2(320, 40));
 
             Button retry = UiBuilder.CreateButton(background.transform,
                 TextLibrary.Get("result.retry"), new Color(0.35f, 0.75f, 0.45f), 40);
@@ -168,13 +169,16 @@ namespace CarDrawing.UI
         private static RawImage CreateLabeledImage(Transform parent, string name, string label, Vector2 center)
         {
             Image frame = UiBuilder.CreateImage(parent, name + "Frame", Color.white);
-            UiBuilder.Place((RectTransform)frame.transform, center, new Vector2(716, 484));
+            UiBuilder.Place((RectTransform)frame.transform, center, new Vector2(850, 550));
 
+            // 이미지는 캔버스 원본 비율 3:2(768×512)를 유지한다 — 프레임(850×534 내부)에 꽉 채우면
+            // 가로로 늘어나 보이므로 세로 기준 801×534, 남는 좌우는 흰 여백(액자 매트 느낌)
             RawImage image = UiBuilder.CreateRawImage(frame.transform, name);
-            UiBuilder.Place((RectTransform)image.transform, Vector2.zero, new Vector2(700, 468));
+            UiBuilder.Place((RectTransform)image.transform, Vector2.zero, new Vector2(801, 534));
 
+            // 라벨은 프레임 하단(-180) 바로 아래, 하단 버튼(top -350) 위 구간에 배치
             Text caption = UiBuilder.CreateText(parent, name + "Label", label, 40, new Color(0.25f, 0.28f, 0.35f));
-            UiBuilder.Place((RectTransform)caption.transform, center + new Vector2(0, -290), new Vector2(700, 60));
+            UiBuilder.Place((RectTransform)caption.transform, center + new Vector2(0, -320), new Vector2(700, 60));
 
             return image;
         }

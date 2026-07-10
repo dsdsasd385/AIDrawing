@@ -13,6 +13,13 @@
     "resultReturnSeconds": 60,
     "errorNoticeSeconds": 4
   },
+  "b2": {
+    "keyFilePath": "Config/b2-key.json",
+    "objectPrefix": "cars/",
+    "downloadAuthSeconds": 604800,
+    "landingTemplatePath": "Data/QrLanding.html",
+    "uploadTimeoutSeconds": 15
+  },
   "gcs": {
     "bucketName": "",
     "keyFilePath": "Config/gcs-key.json",
@@ -27,8 +34,8 @@
     "question": "You are the content gate for a public exhibition gallery. Image 1 is a visitor's hand-drawn sketch and image 2 is the AI-generated result. Reply with only a JSON object: {\"ok\": true} if both images depict a car or vehicle doodle and contain no sexual, violent, hateful, or otherwise inappropriate content or writing; otherwise {\"ok\": false}."
   },
   "gallery": {
-    "slideIntervalSeconds": 8,
-    "rescanIntervalSeconds": 5,
-    "attractSlideIntervalSeconds": 5
+    "slideIntervalSeconds": 5,
+    "rescanIntervalSeconds": 4,
+    "attractSlideIntervalSeconds": 4
   }
 }

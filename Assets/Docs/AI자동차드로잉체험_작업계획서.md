@@ -43,7 +43,7 @@ QR 코드로 자신의 폰에 다운로드할 수 있다.
 | AI 생성 서버  | ComfyUI (API 모드, 로컬 HTTP)                      |
 | 생성 모델     | Stable Diffusion 1.5 + ControlNet Scribble     |
 | 생성 목표 시간  | 4~8초                                           |
-| QR 업로드    | Google Cloud Storage (테스트 계정, 공개 버킷)           |
+| QR 업로드    | Backblaze B2 (무료 티어, 공개 버킷 — GCS는 대안)          |
 | 자동 필터     | 경량 로컬 VLM (CPU, 비동기)                           |
 
 ### VRAM 8GB 제약에서 나온 결정 (변경 금지 근거)
@@ -246,11 +246,19 @@ LineLayer PNG ──> ControlNet Scribble ──> KSampler (img2img, denoise=스
 
 ### 9-2. QR 다운로드 (인터넷 필요, 자동 숨김)
 
-* 생성 직후 결과 PNG를 **GCS 공개 버킷**에 비동기 업로드
-* QR 내용: `https://storage.googleapis.com/<버킷>/<파일명>.png`
-* 서비스 계정 키는 해당 버킷의 **objectCreator 권한만** 부여 (전시장 PC 유출 대비 최소 권한)
+* 생성 직후 결과 PNG를 **Backblaze B2 비공개 버킷**에 비동기 업로드 (2026-07-10 GCS에서 전환 —
+  카드 등록 없이 10GB 영구 무료 + 다운로드는 평균 저장량 3배까지 무료, 전시 볼륨에 충분)
+* 버킷을 비공개로 두는 이유: B2는 **공개 버킷에만 카드 등록을 요구**한다. 대신 QR 링크에
+  만료형 다운로드 토큰을 붙인다 — **링크 유효 7일**(B2 최대치). 관람객은 현장에서 스캔하므로 충분
+* QR은 PNG 직링크가 아니라 **[이미지 저장하기] 버튼이 있는 모바일 랜딩 페이지**를 가리킨다 —
+  결과 PNG와 랜딩 HTML을 같은 접두사로 업로드하고, 다운로드 토큰 1개(fileNamePrefix)로 둘 다 커버.
+  랜딩 템플릿은 `StreamingAssets/Data/QrLanding.html` (문구·디자인 운영자 수정 가능, 13장 원칙).
+  HTML 업로드가 실패하면 PNG 직링크로 자동 폴백해 QR은 계속 동작한다
+* QR 내용: `<downloadUrl>/file/<버킷>/<파일명>.html?Authorization=<토큰>`
+* 애플리케이션 키는 **해당 버킷 제한 + writeFiles·shareFiles 권한만** 부여 (전시장 PC 유출 대비 최소 권한)
 * 업로드 실패/오프라인 → QR 영역만 숨기고 체험은 정상 진행
-* 업로더는 인터페이스(`IResultUploader`) 뒤에 두어 추후 다른 스토리지로 교체 가능하게 한다
+* 업로더는 인터페이스(`IResultUploader`) 뒤에 두어 스토리지 교체 가능 — GCS 구현(`GcsUploader`)도
+  대안으로 유지하며, B2 미설정 시 GCS가 설정돼 있으면 자동으로 그쪽을 쓴다 (기본 B2 → 폴백 GCS)
 
 ### 9-3. 갤러리 전시 (관람객 opt-in + 자동 필터)
 
@@ -429,3 +437,6 @@ Assets/
 | 2026-07-10 | 8장 | 픽셀 스타일을 16-bit crisp에서 **32-bit 소프트**(soft pixel shading·subtle anti-aliasing)로 전환 — crisp 계열 단어가 노이즈 픽셀("깨져 보임")의 원인. 반절림 그림(가장자리·모서리 대각) 한계 검증 및 문서화 |
 | 2026-07-10 | 8장 | 픽셀 스타일 최종안: **품질 강조판**(masterpiece/best quality 앵커 + accurate vehicle proportions·clean silhouette·4-6 color ramp shading·colored outlines). 중간 후보였던 32-bit 소프트판·인디게임판(Eastward/CrossCode)을 거쳐 확정. 「카툰/실사 생성 후 후처리 픽셀화」 대안은 비교 검토 후 기각 (현황 §1) |
 | 2026-07-10 | 10장 | VLM 필터 호출 방식을 OpenAI 호환 chat completions API로 확정 (모델·엔드포인트·질문을 Config.json으로 데이터화). 응답 계약 `{"ok": bool}` + 판정 불가 시 격리 정책 명문화 |
+| 2026-07-10 | 2·9장 | QR 업로드 스토리지를 GCS → **Backblaze B2**로 전환 — 카드 등록 없이 영구 무료(10GB)라 테스트 계정 부담이 없음. GcsUploader는 대안으로 유지 (B2 미설정 시 자동 폴백) |
+| 2026-07-10 | 9장 | B2 버킷을 공개 → **비공개 + 만료형 다운로드 토큰(7일)**으로 변경 — B2가 공개 버킷에 카드 등록을 요구함을 실측. QR 링크에 `?Authorization=` 토큰이 붙고 7일 후 만료 (관람객 현장 스캔 용도로 충분) |
+| 2026-07-10 | 9장 | QR 대상을 PNG 직링크 → **저장 버튼이 있는 모바일 랜딩 페이지**로 변경 — 폰에서 "길게 눌러 저장"을 모르는 관람객 대비. 템플릿 `Data/QrLanding.html`(운영자 수정 가능), 토큰 1개로 HTML+PNG 커버, HTML 실패 시 직링크 폴백 |
