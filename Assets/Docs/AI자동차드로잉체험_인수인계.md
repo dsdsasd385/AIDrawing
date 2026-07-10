@@ -1,6 +1,6 @@
 # AI 자동차 드로잉 체험 — 인수인계 문서
 
-> 최종 갱신: 2026-07-09
+> 최종 갱신: 2026-07-10
 > 새 담당자(개발자 또는 AI 에이전트)가 이 문서 하나로 환경을 재구성하고 작업을 이어받을 수 있도록 작성한다.
 
 ## 문서 3종의 역할과 갱신 시점
@@ -67,11 +67,11 @@ venv\Scripts\pip install -r requirements.txt
 # 4. 코드 구조 (namespace `CarDrawing.*`)
 
 ```
-Assets/Scripts/
+Assets/Scripts/AIDrawing/
 ├── Drawing/      캔버스. DrawingCanvas가 핵심 (이중 RenderTexture)
 ├── Generation/   ComfyUI 연동 (ComfyUIClient·StyleLibrary)
-├── Results/      저장(SessionStore). 업로드·QR·필터는 ④에서 작성 예정
-├── Gallery/      Display 2 슬라이드쇼 (④에서 작성 예정)
+├── Results/      저장(SessionStore) + QR(QrEncoder·QrCodeView) + 업로드(IResultUploader·GcsUploader) + 필터(ContentFilter)
+├── Gallery/      Display 2 슬라이드쇼 (GallerySlideshow — Gallery 폴더 감시, 대기 화면 미니 슬라이드쇼와 목록 공유)
 ├── Core/         AppFlowManager(상태머신)·ConfigManager·TextLibrary·LogManager·IdleWatcher
 └── UI/           패널 컨트롤러 5종 + UiBuilder(런타임 uGUI 공용 헬퍼)
 ```
@@ -88,7 +88,11 @@ DrawingCanvas (선 RT + 색 RT)
   → SessionStore.SaveSketchPair (Sessions/)
   → ComfyUIClient (업로드 → /prompt → 폴링 → 결과 PNG)
   → SessionStore.SaveResult
-  → ResultPanel (표시 + QR 업로드 + opt-in 갤러리 신청)
+  → ResultPanel 표시
+      ├→ GcsUploader (비동기 업로드 → 성공 시 ResultPanel.ShowQr, 실패/미설정 시 QR 숨김 유지)
+      └→ [전시장에 내 작품 걸기] → ContentFilter.Evaluate (백그라운드)
+            → 통과: SessionStore.AddToGallery (Gallery/) → GallerySlideshow가 폴더 감시로 자동 반영
+            → 부적합·판정 불가: SessionStore.AddToQuarantine (Quarantine/)
 ```
 
 설계 원칙 (계획서 12~14장에서 발췌, 코드 작성 시 반드시 지킬 것):
@@ -151,25 +155,34 @@ Unity 클라이언트가 실행 시 치환하는(할) 필드 — **노드 ID를 
 | **런타임 생성 패널: 활성화 전에 데이터 지정 금지** | Awake에서 UI를 만드는 패널(ResultPanel 등)은 **활성화되는 순간 Awake가 돈다**. AppFlowManager가 `SetImages()`를 `EnterState(활성화)`보다 먼저 호출하면 그 시점엔 RawImage 참조가 null이라 지정이 무시되고, 직후 Awake가 빈 UI를 새로 만들어 **결과 이미지가 흰 화면**이 된다(2026-07-09 실측, 데이터는 정상인데 표시만 안 됨). 대응: ResultPanelController가 텍스처를 캐시해 SetImages·Awake 어느 쪽이 먼저 와도 반영. (GeneratingPanel은 `EnterState→Begin` 순, StylePanel preview는 SerializeField라 원래 안전) |
 | **런타임 UI가 씬에 저장되면 중복** | Awake 생성 UI가 씬에 저장돼 있으면 플레이 때 Awake가 또 만들어 중복된다. ResultPanelController는 Awake 첫머리에서 기존 자식을 비운 뒤 생성한다 |
 | **StreamingAssets 이미지는 런타임 File 로드** | 스타일 예시 이미지는 `StreamingAssets/StyleExamples/<id>.png`를 `File.ReadAllBytes`→`Texture2D.LoadImage`→`Sprite.Create`로 읽는다 (텍스처 임포트 대상 아님). 경로는 Styles.json `thumbnail` |
+| **Display 2 캔버스는 레이어 상속 필수** | GalleryCamera는 UI 레이어(5)만 렌더링하는데 `UiBuilder`류의 `new GameObject`는 **Default 레이어(0)로 생성**된다 — 그대로 두면 Display 2가 빈 화면. GallerySlideshow가 Awake 끝에 SetLayerRecursively로 캔버스 레이어를 자식 전체에 물려준다. 갤러리 캔버스에 UI를 추가할 때 이 규칙을 지킬 것 |
+| **QR 인코더는 자체 구현 — 수정 시 반드시 대조 검증** | `QrEncoder.cs`는 ISO 18004 직접 구현(외부 라이브러리 없음). 수정하면 `Encode(text, forceMask)`로 마스크 0~7 행렬을 덤프해 python-qrcode(`QRData(mode=MODE_8BIT_BYTE)`, `border=0`, `mask_pattern` 강제)와 MD5 대조할 것. 2026-07-10 버전 1·5·9·10 × 마스크 8종 = 32행렬 전부 일치 확인. 표시 텍스처는 FilterMode.Point 유지(보간되면 스캔 불가) |
+| **GCS 키는 프로젝트 밖 Config/ 폴더** | 키 경로 기본값 `Config/gcs-key.json`은 exe 옆(에디터: 프로젝트 루트) 기준 상대 경로다. `/[Cc]onfig/`가 .gitignore에 있어 커밋되지 않는다. StreamingAssets에 넣으면 빌드에 포함되므로 금지 |
+| **에디터에서 Display 2 확인** | 빌드 없이 Game 뷰 탭 2개를 열고 각각 Display 1/Display 2를 지정하면 갤러리 월이 보인다. `Display.displays[1].Activate()`는 빌드 전용(`#if !UNITY_EDITOR`) |
+| **run_comfyui.bat은 ASCII 전용으로 유지** | 배치 파일에 한국어 주석을 UTF-8로 저장하면 cmd(cp949)가 줄 경계를 잘못 잘라 **스크립트가 조용히 아무것도 안 한다** (2026-07-10 실측: `'ONIOENCODING' is not recognized` 식으로 깨짐). 주석은 영문만. 서버 출력은 `ComfyUI\comfyui_run.log`로 남긴다 — 서버가 죽으면 이 파일부터 볼 것. `PYTHONIOENCODING=utf-8`은 cp949 콘솔의 UnicodeEncodeError 사망 방지용으로 유지 |
+| **ComfyUI Desktop 앱은 불필요** | 설치본은 git+venv 방식(`C:\Users\HULIAC\ComfyUI`)이며 Desktop 앱과 무관. "서버가 안 뜬다"면 Desktop 설치가 아니라 ①`comfyui_run.log` 확인 ②`venv\Scripts\python.exe main.py --listen 127.0.0.1 --port 8188` 직접 실행으로 진단 |
 
 ---
 
-# 7. 외부 계정 / 보안 (미생성 — ④에서 필요)
+# 7. 외부 계정 / 보안 (코드 준비 완료 — 계정·모델만 미개통)
 
-- **GCS (QR 업로드)**: 소유자 개인 Google Cloud 테스트 계정 사용 예정. 아직 버킷·서비스 계정 미생성
-  - 생성 시: 공개 읽기 버킷 + 서비스 계정 키는 해당 버킷 **objectCreator 권한만** (전시장 PC 유출 대비)
-  - 키 파일은 저장소에 커밋 금지. `StreamingAssets` 밖 exe 옆 `Config/` 폴더에서 로드하는 구조로 만들 것
-- **VLM 필터 모델**: 미선정. 후보 Moondream2 / Qwen2-VL-2B급, CPU 비동기 실행 전제 (계획서 10장)
+- **GCS (QR 업로드)**: 소유자 개인 Google Cloud 테스트 계정 사용 예정. 버킷·서비스 계정 **아직 미생성** — 코드(`GcsUploader`)는 완성돼 있어 아래만 하면 QR이 켜진다:
+  1. 공개 읽기 버킷 생성 (allUsers에 Storage 개체 뷰어)
+  2. 서비스 계정 생성 + 해당 버킷 **objectCreator 권한만** 부여 (전시장 PC 유출 대비 최소 권한 — 클라이언트도 스코프를 devstorage.read_write로 제한)
+  3. 키 JSON을 `<프로젝트 루트>/Config/gcs-key.json`에 배치 (빌드에서는 exe 옆 `Config/`. .gitignore 처리됨 — 커밋 금지)
+  4. `StreamingAssets/Data/Config.json`의 `gcs.bucketName` 기입 (`keyFilePath`·`objectPrefix`는 기본값 그대로 가능)
+- **VLM 필터 모델**: 미선정. 코드(`ContentFilter`)는 OpenAI 호환 chat completions 호출로 완성 — Ollama 설치 후 Moondream2 / Qwen2-VL-2B급을 비교(차량 판정 정확도·CPU 소요)해 `filter.model` 확정, `filter.enabled=true`로 전환. 필터가 꺼져 있으면 opt-in 작품이 곧장 갤러리로 간다
 
 ---
 
 # 8. 미결 사항 체크리스트
 
-- [ ] 마일스톤 ④~⑤ (작업현황 문서의 "다음 작업" 참조)
+- [x] ~~마일스톤 ④ 코드·씬 구성~~ (2026-07-10 완료 — 플레이 검증·계정 개통만 남음, 작업현황 §3)
+- [ ] 마일스톤 ④ 플레이 검증 + ⑤ (작업현황 문서의 "다음 작업" 참조)
 - [ ] 이전 프로젝트 삭제분 clean slate 커밋 정리
-- [ ] GCS 버킷·서비스 계정 생성 (7장)
-- [ ] VLM 필터 모델 선정·검증 (7장)
-- [ ] 스타일 프리셋 3~4종 확정 (v1은 실사 1종) — 스타일별 denoise 개별 튜닝 필요
+- [ ] GCS 버킷·서비스 계정 생성 (7장 절차대로 — 코드는 준비됨)
+- [ ] VLM 필터 모델 선정·검증 (7장 — 코드는 준비됨, 기본 filter.enabled=false)
+- [x] ~~스타일 프리셋 3~4종 확정~~ (2026-07-10 — 4종 프롬프트·denoise 확정, 작업현황 §1)
 - [ ] 관리자 모드 진입 키 조합·비밀번호 확정 (계획서 11장, 예시: Ctrl+Shift+F12)
 - [ ] Build Settings에 씬 등록 + Windows 빌드 검증
 - [ ] 전시장 PC 사양·인터넷 회선 확정 시 재검토 (현재는 개발 PC = 전시 PC 가정)

@@ -120,11 +120,11 @@ namespace CarDrawing.Generation
             float deadline = Time.realtimeSinceStartup + cfg.generateTimeoutSeconds;
 
             // 1) 스케치 업로드. 세션 ID를 파일명에 넣어 이전 업로드와의 충돌을 피한다
-            string lineName = null, colorName = null;
-            yield return UploadImage(cfg, sessionId + "_line.png", linePng, n => lineName = n);
-            if (lineName == null) { Fail(onFailure, "선 레이어 업로드 실패"); yield break; }
-            yield return UploadImage(cfg, sessionId + "_color.png", colorPng, n => colorName = n);
-            if (colorName == null) { Fail(onFailure, "색 레이어 업로드 실패"); yield break; }
+            string lineName = null, colorName = null, uploadError = null;
+            yield return UploadImage(cfg, sessionId + "_line.png", linePng, (n, err) => { lineName = n; uploadError = err; });
+            if (lineName == null) { Fail(onFailure, "선 레이어 업로드 실패: " + uploadError); yield break; }
+            yield return UploadImage(cfg, sessionId + "_color.png", colorPng, (n, err) => { colorName = n; uploadError = err; });
+            if (colorName == null) { Fail(onFailure, "색 레이어 업로드 실패: " + uploadError); yield break; }
 
             // 2) 워크플로 로드 + 치환 (노드 매핑은 인수인계 §5 — 워크플로 노드 ID 변경 시 여기도 수정)
             string payload = null, buildError = null;
@@ -177,7 +177,9 @@ namespace CarDrawing.Generation
 
         // ── 1) 업로드 ──────────────────────────────────────
 
-        private IEnumerator UploadImage(ComfyUiConfig cfg, string fileName, byte[] png, Action<string> onDone)
+        // onDone(서버가 저장한 파일명, 실패 상세). 실패 상세는 호출부가 Fail 메시지에 실어
+        // AppFlow의 Error 로그에서도 근본 원인이 보이게 한다 (Warn까지 뒤지지 않아도 되도록)
+        private IEnumerator UploadImage(ComfyUiConfig cfg, string fileName, byte[] png, Action<string, string> onDone)
         {
             var form = new WWWForm();
             form.AddBinaryData("image", png, fileName, "image/png");
@@ -190,11 +192,17 @@ namespace CarDrawing.Generation
 
                 if (req.result != UnityWebRequest.Result.Success)
                 {
-                    LogManager.Warn($"[ComfyUI] 업로드 요청 실패({fileName}): {req.error}");
-                    onDone(null);
+                    // 접속 자체가 안 되는 경우가 압도적으로 흔한 원인(서버 미기동) — 진단 힌트를 함께 남긴다
+                    string detail = $"{req.error} (HTTP {req.responseCode}, {cfg.baseUrl})";
+                    if (!string.IsNullOrEmpty(req.error) && req.error.Contains("Cannot connect"))
+                        detail += @" — ComfyUI 서버 미기동으로 보임. Tools\run_comfyui.bat 실행 여부 확인 (기동 후 준비까지 ~90초)";
+                    LogManager.Warn($"[ComfyUI] 업로드 요청 실패({fileName}): {detail}");
+                    onDone(null, detail);
                     yield break;
                 }
-                onDone(ParseUploadedName(req.downloadHandler.text));
+
+                string savedName = ParseUploadedName(req.downloadHandler.text);
+                onDone(savedName, savedName == null ? "업로드 응답 해석 실패 (서버 응답이 예상 JSON이 아님)" : null);
             }
         }
 

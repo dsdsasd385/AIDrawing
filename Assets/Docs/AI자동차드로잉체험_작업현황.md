@@ -14,7 +14,7 @@
 | ① | ComfyUI 파이프라인 검증 (설치·모델·워크플로·생성 테스트) | ✅ 완료 (2회차 7.2초, 목표 4~8초 달성) |
 | ② | 그리기 캔버스 (이중 텍스처 + 도구 + PNG 저장) | ✅ 완료 (플레이 모드 실측 검증) |
 | ③ | 전체 흐름 연결 (패널 상태머신 + ComfyUI 연동 + 시간 정책) | ✅ 완료 (실생성 포함 1사이클 완주) |
-| ④ | 갤러리(Display 2) + QR(GCS) + VLM 필터 + opt-in | ⬜ 예정 (다음 작업) |
+| ④ | 갤러리(Display 2) + QR(GCS) + VLM 필터 + opt-in | 🔶 코드·씬 완료 (GCS 버킷 생성·VLM 모델 선정·플레이 검증 남음) |
 | ⑤ | 운영 안정화 (자동 시작·워치독·키오스크·관리자) + 스타일 확장·품질 튜닝 | ⬜ 예정 |
 
 ---
@@ -160,6 +160,35 @@ AppFlow  ← 신규 (AppFlowManager + IdleWatcher + ComfyUIClient, 참조 인스
 - **「카툰/실사 생성 후 후처리 픽셀화」 대안 검토 (2026-07-10, 기각)**: 다운스케일+팔레트 양자화+니어리스트 확대로 비교한 결과 — 실사→픽셀화는 흐린 사진 축소판(최하), 카툰→픽셀화는 색 보존은 완벽하나 외곽선이 바스러져 "줄어든 일러스트"로 보임. SD 직접 생성이 검은 외곽선·픽셀 클러스터 등 픽셀아트 정체성이 뚜렷해 **현행(직접 생성) 유지**. 색 충실도가 최우선이 되면 카툰→픽셀화가 플랜 B (결정적·균일하며 노랑도 정확히 보존)
 - **반절림 그림 검증** (가장자리 반절림·모서리 대각 반절림 × 4스타일 × 3회): ①실사 — 가장자리는 반쪽 차 사진으로 자연스럽게 재현, 모서리 대각은 클로즈업으로 새기도 함, 색은 대체로 무시 ②카툰 — 색은 유지하나 빈 공간에 미완성 유령차 낙서 동반 잦음(2/3) ③픽셀 — **가장자리 반절림에서 파편화**(스프라이트 조각), 모서리 대각은 오히려 3/3 안정 ④클레이 — 잘린 차를 완성차로 채워버림, 색 이탈. 종합: 반절림은 프롬프트로 못 잡는 구조적 한계 → 운영 대응(그리기 안내 문구 "차 전체를 화면 안에 그려주세요") 권장
 
+### 마일스톤 ④ — 갤러리 + QR + 필터 (2026-07-10, 코드·씬 구성 완료)
+
+#### 신규 스크립트 (Assets/Scripts/AIDrawing)
+
+| 파일 | 역할 |
+| --- | --- |
+| `Results/QrEncoder.cs` | QR 인코더 자체 구현 (바이트 모드·오류정정 M·버전 1~10 자동, ISO/IEC 18004). 외부 라이브러리 의존 없음 |
+| `Results/QrCodeView.cs` | QR 행렬 → Texture2D (Point 필터, 콰이어트존 4). 실패 시 null 반환 → QR만 숨김 |
+| `Results/IResultUploader.cs` | 업로더 인터페이스 (계획서 9-2: 스토리지 교체 가능 구조) |
+| `Results/GcsUploader.cs` | GCS 구현: 서비스 계정 JWT RS256 서명 → OAuth2 토큰(캐시) → 공개 버킷 업로드. 키·버킷 미설정이면 IsConfigured=false로 QR 전체 자동 비활성 |
+| `Results/ContentFilter.cs` | 갤러리 게이트. OpenAI 호환 chat completions(Ollama 등)로 스케치+결과 2장 판정. 꺼짐→통과, 판정 불가→격리(보수적, 계획서 10장) |
+| `Gallery/GallerySlideshow.cs` | Display 2 슬라이드쇼. Gallery 폴더 감시(복사만으로 반영), 빈 갤러리 안내 문구, 빌드에서 Display 2 Activate |
+
+기존 변경: `ResultPanelController`에 QR 영역(업로드 완료 시에만 표시) + [전시장에 내 작품 걸기] 버튼(중복 신청 방지, 즉시 "신청 완료" 피드백). `AttractPanelController`에 미니 슬라이드쇼(갤러리 비면 자동 숨김). `AppFlowManager`에 업로드 시작(세션 ID 가드로 늦은 콜백 차단)·opt-in→필터→Gallery/Quarantine 흐름. `ConfigManager`에 gcs.objectPrefix·filter.question 필드. Config.json에 gcs/filter/gallery 섹션, Texts.json에 QR·전시·갤러리 문구 6종.
+
+#### 씬 구성 변경
+
+```
+GalleryCamera   ← 신규. Display 2(targetDisplay 1), SolidColor 검정, cullingMask UI만, y=-1000(본 씬과 분리)
+GalleryCanvas   ← 신규. Screen Space-Camera(GalleryCamera 연결), 1920×1080 스케일, UI 레이어, GallerySlideshow
+AppFlow         ← GcsUploader + ContentFilter 컴포넌트 추가 (AppFlowManager가 FindObjectOfType 폴백으로 연결)
+```
+
+#### 검증 결과 (2026-07-10)
+
+- **QR 인코더 대조 검증 완료**: 강제 마스크 0~7 × 입력 4종(버전 1·5·9·10 — 16비트 카운트 경로 포함) 총 32개 행렬을 레퍼런스 구현(python-qrcode)과 MD5 대조 → **전부 일치**. 자동 마스크 선택도 2/4 동일(불일치 2건은 벌점 동점 처리 차이로 둘 다 유효한 QR)
+- 컴파일 오류 없음, 씬 저장 완료
+- **플레이 모드 통합 검증 미실시** — GCS 버킷·VLM 모델이 아직 없어 QR/필터는 "자동 숨김/격리 폴백" 경로만 확인 가능. 갤러리 3경로 검증은 §3 참조
+
 ---
 
 ## 2. 알려진 이슈 / 메모
@@ -168,7 +197,10 @@ AppFlow  ← 신규 (AppFlowManager + IdleWatcher + ComfyUIClient, 참조 인스
 | --- | --- | --- |
 | ComfyUI 첫 제출 검증 오류 | 업로드 직후 첫 `/prompt` 제출에서 `Invalid image file` 1회 발생, 재시도로 해결 | ✅ 해소 — ComfyUIClient에 제출 재시도 1회 내장 (Config `submitMaxRetries`) |
 | ~~첫 생성이 타임아웃(첫 이미지 안 나옴)~~ **해결됨(2026-07-09)** | 원인 2개: ①콜드 모델 로딩 31.66초 > 타임아웃 30초, ②폴링 캐싱으로 첫 생성 완료 미감지. **대응 완료**: `ComfyUIClient.Warmup()`(시작 시 예열, 3회 재시도) + PollHistory 캐시버스터·no-cache + 타임아웃 45초. 콜드 재시작 실측으로 워밍업 첫 시도 완료 + 실제 생성 Result 도달 확인. 상세 인수인계 §6 |
-| 결과 화면 미완 | QR 코드·[전시장에 내 작품 걸기] 버튼 없음 | ④에서 ResultPanel에 추가 |
+| ~~결과 화면 미완~~ **해소(2026-07-10)** | QR 코드·[전시장에 내 작품 걸기] 버튼 없음 | ✅ 해소 — ④에서 ResultPanel에 추가 완료 |
+| GCS 버킷·서비스 계정 미생성 | 코드는 완성 — 키가 없으면 QR이 자동 숨김으로 동작 | 버킷 생성 → 키를 `Config/gcs-key.json`에 배치 → Config.json `gcs.bucketName` 기입 (인수인계 §7) |
+| VLM 필터 모델 미선정 | 필터 코드는 완성(OpenAI 호환 API 호출), 기본값 `filter.enabled=false` — opt-in 작품이 곧장 갤러리로 감 | Ollama + Moondream2/Qwen2-VL-2B급 선정·검증 후 enabled 전환 (인수인계 §7) |
+| 마일스톤 ④ 플레이 검증 미실시 | 갤러리 3경로(표시·QR·갤러리) 플레이 실측 필요 | §3의 검증 절차 참조 |
 | ~~스타일 예시 이미지 3종 없음~~ 해소 | `StyleExamples/`에 4종 PNG 배치됨 (cartoon/pixelart/clayStyle/realistic) | ✅ 해소 — 프롬프트 확정본으로 재생성해 교체하면 더 정확 (선택) |
 | ~~스타일 3종 프롬프트 임시값~~ **해소(2026-07-10)** | 카툰/픽셀아트/클레이 프롬프트·denoise 미검증 상태였음 | ✅ 해소 — 실사 구조로 강화 + ComfyUI API 직접 생성으로 4종 검증 (§1). 플레이 모드 통합 확인만 남음 |
 | 엉성한 그림 아티팩트 → **재발·재수정(2026-07-09 저녁)** | 바퀴 이상/없음·문 이상·차 모양 붕괴 재발. **원인: ControlNet 0.35/0.6 튜닝이 문서에만 있고 워크플로 파일엔 0.9/1.0으로 남아 있었음** + 실사 프롬프트의 "isometric view of a boxy car"(낙서 시점과 충돌) + 부정 프롬프트 "floor, shadow"(바퀴 접지 삭제) | 대응 완료: 워크플로 노드 9에 **strength 0.35 / end_percent 0.6 실반영**, 실사 프롬프트에서 isometric 제거·four wheels 강조·부정 프롬프트에 바퀴 이상 계열 추가, **실사 denoise 0.8**(우선순위 변경: 모양 정상 > 색 보존, 장난감풍 허용). 플레이 모드 재검증 필요 (인수인계 §5). **2026-07-10 또 재발 발견**: 파일에 strength 0.6으로 되돌아가 있어 0.35 재반영 (인수인계 §5 경고 참조) |
@@ -177,15 +209,12 @@ AppFlow  ← 신규 (AppFlowManager + IdleWatcher + ComfyUIClient, 참조 인스
 
 ---
 
-## 3. 다음 작업 (마일스톤 ④ — 갤러리 + QR + 필터)
+## 3. 다음 작업 (마일스톤 ④ 마무리 → ⑤)
 
-1. `Gallery/GallerySlideshow.cs` — Display 2 전용 카메라 + Screen Space-Camera 캔버스, `Gallery/` 폴더 감시 슬라이드쇼 (계획서 5장)
-2. `Results/GcsUploader.cs` — `IResultUploader` 인터페이스 + GCS 구현 (실패해도 체험 계속), GCS 버킷·서비스 계정 생성 선행 (인수인계 §7)
-3. `Results/QrCodeView.cs` — 업로드 URL의 QR 생성·표시, 오프라인 시 자동 숨김
-4. `Results/ContentFilter.cs` — VLM 필터 (CPU 비동기), 모델 선정 선행 (Moondream2 / Qwen2-VL-2B급)
-5. ResultPanel에 QR 영역 + [전시장에 내 작품 걸기] 버튼 추가, opt-in → 필터 → Gallery/Quarantine 흐름
-6. AttractPanel에 미니 슬라이드쇼 추가 (계획서 5장)
-7. 검증: 더미/실데이터로 3경로(표시·QR·갤러리) 모두 동작
+1. **플레이 모드 검증 (외부 계정 없이 지금 가능)**: 그리기→생성→결과에서 ①QR 영역이 안 보이는지(미설정 자동 숨김) ②[전시장에 내 작품 걸기] 클릭 → `Gallery/`에 결과 복사 + Display 2(Game 뷰 탭 2개, §4)와 대기 화면 미니 슬라이드쇼에 반영되는지 ③스타일 4종 각 1회 생성(§1 프롬프트 확정 후 통합 확인 미실시분)
+2. **GCS 개통**: 버킷 생성(공개 읽기) + objectCreator 전용 서비스 계정 키 발급 → `<프로젝트 루트>/Config/gcs-key.json` 배치(이미 .gitignore 처리) → Config.json `gcs.bucketName` 기입 → 결과 화면 QR 표시·폰 스캔 다운로드 실측 (인수인계 §7)
+3. **VLM 필터 개통**: Ollama 설치 + Moondream2/Qwen2-VL-2B급 후보 비교(차량/부적절 판정 정확도, CPU 소요 시간) → Config.json `filter.model` 확정, `filter.enabled=true` → 정상/부적절 낙서로 Gallery/Quarantine 분기 실측
+4. 마일스톤 ⑤: 운영 안정화 (부팅 자동 시작·워치독·키오스크·관리자 모드) + Build Settings 씬 등록·빌드 검증
 
 ---
 
@@ -196,6 +225,8 @@ AppFlow  ← 신규 (AppFlowManager + IdleWatcher + ComfyUIClient, 참조 인스
 3. 화면 클릭 → 그리기 → [완성!] → 스타일 선택 → 4~8초 후 결과 화면 (콜드 부팅 첫 생성은 타임아웃될 수 있음 — 한 번 더 시도)
 4. 산출물: `AppData\LocalLow\DefaultCompany\Practice01\Sessions\`에 `_line`/`_sketch`/`_result` PNG 3장
 5. 서버를 안 켜고 플레이하면 생성 실패 → 사과 문구 → 대기 복귀로 동작해야 정상 (예외로 죽지 않기)
+6. **갤러리(Display 2) 확인**: Game 뷰 탭을 2개 열고 각각 Display 1 / Display 2 지정 (계획서 5장, 빌드 불필요). 결과 화면에서 [전시장에 내 작품 걸기] 클릭 → `Gallery/` 폴더에 복사 → 몇 초 안에 Display 2와 대기 화면 미니 슬라이드쇼에 반영
+7. **QR 확인**: GCS 설정(인수인계 §7)이 된 경우에만 결과 화면 좌하단에 QR 표시 — 미설정이면 안 보이는 게 정상
 
 ---
 

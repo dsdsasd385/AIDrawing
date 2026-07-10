@@ -20,7 +20,7 @@
 ## 핵심 경로
 
 - 작업 씬: `Assets/Scenes/AI자동차드로잉체험.unity` (단일 씬 + 패널 상태머신)
-- 코드: `Assets/Scripts/` (namespace `CarDrawing.*`, 한국어 주석 — 계획서 §17 규칙)
+- 코드: `Assets/Scripts/AIDrawing/` (namespace `CarDrawing.*`, 한국어 주석 — 계획서 §17 규칙)
 - 워크플로: `Assets/StreamingAssets/ComfyUI/car_workflow_api.json` (노드 ID 변경 시 클라이언트도 수정)
 - ComfyUI 서버: `C:\Users\HULIAC\ComfyUI`, 기동은 `Tools\run_comfyui.bat`, 주소 `http://127.0.0.1:8188`
 

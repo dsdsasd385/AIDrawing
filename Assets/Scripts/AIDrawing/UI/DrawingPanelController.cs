@@ -71,18 +71,20 @@ namespace CarDrawing.UI
             SetEraser(false);
         }
 
-        /// <summary>펜 굵기를 설정한다.</summary>
+        /// <summary>펜 굵기를 설정하고 지우개 모드를 끈다.</summary>
         public void SetPenSize(float radius)
         {
+            canvas.IsEraser = false;
             canvas.BrushRadius = radius;
+            _eraserButtonImage.color = Color.white;
         }
 
-        /// <summary>지우개 모드를 켜거나 끈다.</summary>
+        /// <summary>지우개 모드를 킨다.</summary>
         public void SetEraser(bool on)
         {
             canvas.IsEraser = on;
             if (_eraserButtonImage != null)
-                _eraserButtonImage.color = on ? new Color(1f, 0.8f, 0.4f) : Color.white;
+                _eraserButtonImage.color = new Color(1f, 0.8f, 0.4f);
         }
 
         /// <summary>마지막 스트로크를 취소한다.</summary>

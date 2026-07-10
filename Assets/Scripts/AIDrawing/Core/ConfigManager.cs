@@ -43,8 +43,11 @@ namespace CarDrawing.Core
     {
         /// <summary>공개 버킷 이름. 비어 있으면 QR 기능 전체가 꺼진다</summary>
         public string bucketName = "";
-        /// <summary>서비스 계정 키 JSON 경로. 절대 경로 또는 StreamingAssets 기준 상대 경로</summary>
-        public string keyFilePath = "";
+        /// <summary>서비스 계정 키 JSON 경로. 절대 경로 또는 exe 옆(에디터: 프로젝트 루트) 기준 상대 경로.
+        /// StreamingAssets 밖에 두는 이유: 키를 저장소·빌드 산출물에 싣지 않기 위함 (인수인계 §7)</summary>
+        public string keyFilePath = "Config/gcs-key.json";
+        /// <summary>버킷 안 객체 이름 접두사 (폴더 역할)</summary>
+        public string objectPrefix = "cars/";
         /// <summary>업로드 요청 타임아웃(초). 초과 시 QR만 숨기고 체험은 계속</summary>
         public float uploadTimeoutSeconds = 15f;
     }
@@ -61,6 +64,14 @@ namespace CarDrawing.Core
         public string model = "moondream";
         /// <summary>판정 요청 타임아웃(초). 초과·실패 시 보수적으로 격리(계획서 10장 판정 정책)</summary>
         public float timeoutSeconds = 20f;
+        /// <summary>VLM에 보내는 판정 질문. 영어인 이유: 경량 VLM은 영어 지시 추종이 훨씬 안정적이다.
+        /// {"ok": true/false} 한 줄만 답하게 강제한다 (ContentFilter가 이 형식을 해석)</summary>
+        public string question =
+            "You are the content gate for a public exhibition gallery. " +
+            "Image 1 is a visitor's hand-drawn sketch and image 2 is the AI-generated result. " +
+            "Reply with only a JSON object: {\"ok\": true} if both images depict a car or vehicle doodle " +
+            "and contain no sexual, violent, hateful, or otherwise inappropriate content or writing; " +
+            "otherwise {\"ok\": false}.";
     }
 
     /// <summary>갤러리 슬라이드쇼 설정 (계획서 5장 Display 2)</summary>

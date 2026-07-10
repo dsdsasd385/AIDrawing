@@ -278,6 +278,9 @@ LineLayer PNG ──> ControlNet Scribble ──> KSampler (img2img, denoise=스
   "차량 그림인가? 성적·혐오·부적절 문자 낙서가 포함되는가?"
 * **CPU에서 비동기 실행** (2~5초) — 갤러리 등재만 결정하므로 관람객은 기다리지 않는다
 * 사진 학습 NSFW 분류기를 쓰지 않는 이유: 낙서/선화에 잘 동작하지 않음. 최대 리스크는 스케치 쪽
+* 호출 방식: **OpenAI 호환 chat completions API** (Ollama·llama.cpp 서버 등) — 모델을 바꿔도 코드 수정 없이
+  Config.json `filter.model`/`endpoint`만 교체. 판정 질문도 `filter.question`으로 데이터화 (13장 원칙)
+* 응답 계약: VLM은 `{"ok": true/false}` JSON 한 줄로 답하게 강제. 해석 실패·타임아웃·서버 부재 = 판정 불가 → 격리
 
 ### 판정 정책
 
@@ -425,3 +428,4 @@ Assets/
 | 2026-07-10 | 8장 | 카툰·픽셀의 색 미적용 문제로 denoise를 스타일별 분리: 실사·클레이 0.8(모양 우선), **카툰·픽셀 0.7(색 보존 우선)**. 색 유도 단어("limited color palette" 등) 금지 원칙 추가. 시점 4종×스타일 4종×3회 매트릭스로 검증 |
 | 2026-07-10 | 8장 | 픽셀 스타일을 16-bit crisp에서 **32-bit 소프트**(soft pixel shading·subtle anti-aliasing)로 전환 — crisp 계열 단어가 노이즈 픽셀("깨져 보임")의 원인. 반절림 그림(가장자리·모서리 대각) 한계 검증 및 문서화 |
 | 2026-07-10 | 8장 | 픽셀 스타일 최종안: **품질 강조판**(masterpiece/best quality 앵커 + accurate vehicle proportions·clean silhouette·4-6 color ramp shading·colored outlines). 중간 후보였던 32-bit 소프트판·인디게임판(Eastward/CrossCode)을 거쳐 확정. 「카툰/실사 생성 후 후처리 픽셀화」 대안은 비교 검토 후 기각 (현황 §1) |
+| 2026-07-10 | 10장 | VLM 필터 호출 방식을 OpenAI 호환 chat completions API로 확정 (모델·엔드포인트·질문을 Config.json으로 데이터화). 응답 계약 `{"ok": bool}` + 판정 불가 시 격리 정책 명문화 |

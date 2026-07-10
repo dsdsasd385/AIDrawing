@@ -41,6 +41,10 @@ namespace CarDrawing.Core
         [SerializeField] private ComfyUIClient comfyClient;
         /// <summary>무입력 시간 측정기</summary>
         [SerializeField] private IdleWatcher idleWatcher;
+        /// <summary>결과 업로더 (QR용, 계획서 9-2). 미설정이면 QR이 자동으로 숨는다</summary>
+        [SerializeField] private GcsUploader uploader;
+        /// <summary>갤러리 게이트 필터 (계획서 10장)</summary>
+        [SerializeField] private ContentFilter contentFilter;
 
         private AppState _state;
         private string _sessionId;
@@ -63,6 +67,7 @@ namespace CarDrawing.Core
             drawingPanel.ContinueRequested += OnIdleContinue;
             stylePanel.StyleChosen += OnStyleChosen;
             resultPanel.RetryRequested += OnRetryRequested;
+            resultPanel.GalleryRequested += OnGalleryRequested;
 
             EnterState(AppState.Attract);
 
@@ -80,7 +85,11 @@ namespace CarDrawing.Core
                 drawingPanel.ContinueRequested -= OnIdleContinue;
             }
             if (stylePanel != null) stylePanel.StyleChosen -= OnStyleChosen;
-            if (resultPanel != null) resultPanel.RetryRequested -= OnRetryRequested;
+            if (resultPanel != null)
+            {
+                resultPanel.RetryRequested -= OnRetryRequested;
+                resultPanel.GalleryRequested -= OnGalleryRequested;
+            }
 
             CleanupSession();
         }
@@ -97,6 +106,8 @@ namespace CarDrawing.Core
             if (canvas == null) canvas = FindObjectOfType<DrawingCanvas>(true);
             if (comfyClient == null) comfyClient = FindObjectOfType<ComfyUIClient>(true);
             if (idleWatcher == null) idleWatcher = FindObjectOfType<IdleWatcher>(true);
+            if (uploader == null) uploader = FindObjectOfType<GcsUploader>(true);
+            if (contentFilter == null) contentFilter = FindObjectOfType<ContentFilter>(true);
         }
 
         private void Update()
@@ -242,6 +253,43 @@ namespace CarDrawing.Core
 
             resultPanel.SetImages(_sketchTexture, _resultTexture);
             EnterState(AppState.Result);
+
+            // QR용 업로드 (계획서 9-2: 생성 직후 비동기, 실패해도 체험 계속).
+            // 세션 ID를 붙잡아 두는 이유: 업로드가 끝났을 때 이미 다음 관람객 세션이면 QR을 붙이지 않아야 한다
+            string uploadSessionId = _sessionId;
+            if (uploader != null && uploader.IsConfigured)
+            {
+                uploader.Upload(uploadSessionId, resultPng, url =>
+                {
+                    if (url == null) return; // 실패 — QR 영역이 숨겨진 채 유지된다
+                    if (_state != AppState.Result || _sessionId != uploadSessionId) return; // 늦게 온 결과는 버린다
+                    resultPanel.ShowQr(url);
+                });
+            }
+        }
+
+        private void OnGalleryRequested()
+        {
+            if (_state != AppState.Result || _sessionId == null) return;
+
+            // 세션 ID를 붙잡아 둔다 — 필터 판정은 세션이 끝난 뒤 도착할 수 있고, 파일은 Sessions/에 남아 있다
+            string sessionId = _sessionId;
+            LogManager.Info($"[AppFlow] 갤러리 전시 신청: 세션 {sessionId}");
+
+            if (contentFilter == null)
+            {
+                // 필터 컴포넌트 자체가 없으면 꺼진 것과 동일하게 취급 (예외로 죽지 않기)
+                string dest = SessionStore.AddToGallery(sessionId);
+                LogManager.Info($"[AppFlow] 필터 없음 — 갤러리 직행: {dest}");
+                return;
+            }
+
+            contentFilter.Evaluate(sessionId, pass =>
+            {
+                // 통과 → 갤러리(슬라이드쇼가 폴더 감시로 자동 반영), 부적합/판정 불가 → 격리(관리자 복원 가능)
+                string dest = pass ? SessionStore.AddToGallery(sessionId) : SessionStore.AddToQuarantine(sessionId);
+                LogManager.Info($"[AppFlow] 갤러리 판정 {(pass ? "통과" : "격리")} (세션 {sessionId}): {dest}");
+            });
         }
 
         private void OnGenerationFailed(string reason)

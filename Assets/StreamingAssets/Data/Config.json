@@ -15,9 +15,20 @@
   },
   "gcs": {
     "bucketName": "",
-    "keyFilePath": ""
+    "keyFilePath": "Config/gcs-key.json",
+    "objectPrefix": "cars/",
+    "uploadTimeoutSeconds": 15
   },
   "filter": {
-    "enabled": false
+    "enabled": false,
+    "endpoint": "http://127.0.0.1:11434/v1/chat/completions",
+    "model": "moondream",
+    "timeoutSeconds": 20,
+    "question": "You are the content gate for a public exhibition gallery. Image 1 is a visitor's hand-drawn sketch and image 2 is the AI-generated result. Reply with only a JSON object: {\"ok\": true} if both images depict a car or vehicle doodle and contain no sexual, violent, hateful, or otherwise inappropriate content or writing; otherwise {\"ok\": false}."
+  },
+  "gallery": {
+    "slideIntervalSeconds": 8,
+    "rescanIntervalSeconds": 5,
+    "attractSlideIntervalSeconds": 5
   }
 }
