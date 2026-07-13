@@ -3,7 +3,7 @@
     "baseUrl": "http://127.0.0.1:8188",
     "workflowPath": "ComfyUI/car_workflow_api.json",
     "pollIntervalSeconds": 0.5,
-    "generateTimeoutSeconds": 45,
+    "generateTimeoutSeconds": 90,
     "submitMaxRetries": 1
   },
   "timing": {
@@ -37,5 +37,10 @@
     "slideIntervalSeconds": 5,
     "rescanIntervalSeconds": 4,
     "attractSlideIntervalSeconds": 4
+  },
+  "video": {
+    "enabled": true,
+    "workflowPath": "ComfyUI/car_video_workflow_api.json",
+    "generateTimeoutSeconds": 120
   }
 }

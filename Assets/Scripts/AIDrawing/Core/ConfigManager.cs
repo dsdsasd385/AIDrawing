@@ -15,8 +15,9 @@ namespace CarDrawing.Core
         /// <summary>완료 폴링 간격(초). 계획서 7장: 0.5초</summary>
         public float pollIntervalSeconds = 0.5f;
         /// <summary>생성 전체 타임아웃(초). 계획서 12장: 초과 시 해당 세션만 사과 후 초기화.
-        /// 콜드 스타트 첫 생성이 ~32초라 여유를 둔다(인수인계 §6). 워밍업이 있으면 실제 생성은 7~13초</summary>
-        public float generateTimeoutSeconds = 45f;
+        /// 워밍업이 있으면 실제 생성은 7~13초지만, 부팅 워밍업이 전용 체크포인트(카툰 ToonYou 2.3GB)를
+        /// 콜드 디스크 로드하는 데 이 타임아웃이 필요하다 — 부족하면 워밍업이 실패해 카툰 첫 생성이 타임아웃난다(2026-07-13)</summary>
+        public float generateTimeoutSeconds = 90f;
         /// <summary>제출 재시도 횟수. 업로드 직후 첫 제출 실패가 실측된 함정 (인수인계 §6)</summary>
         public int submitMaxRetries = 1;
     }
@@ -94,6 +95,20 @@ namespace CarDrawing.Core
             "otherwise {\"ok\": false}.";
     }
 
+    /// <summary>결과 영상화 설정 (마일스톤 ⑥, 계획서 §18 2026-07-13).
+    /// 결과 이미지를 AnimateDiff로 짧은 영상으로 만들어 결과 화면에서 이미지와 교체한다.
+    /// 실패·타임아웃 시 이미지가 그대로 남는다 (폴백 — 예외로 죽지 않기)</summary>
+    [Serializable]
+    public class VideoConfig
+    {
+        /// <summary>영상화 사용 여부. 끄면 기존 이미지-only 흐름과 동일하게 동작한다</summary>
+        public bool enabled = true;
+        /// <summary>StreamingAssets 기준 영상 워크플로 JSON 상대 경로 (노드 ID 101번대 — 인수인계 §6 캐시 충돌 함정)</summary>
+        public string workflowPath = "ComfyUI/car_video_workflow_api.json";
+        /// <summary>영상 생성 전체 타임아웃(초). 실측 2초 클립 ~40초 + 콜드 모션 모듈 로딩 여유 (현황 §1)</summary>
+        public float generateTimeoutSeconds = 120f;
+    }
+
     /// <summary>갤러리 슬라이드쇼 설정 (계획서 5장 Display 2)</summary>
     [Serializable]
     public class GalleryConfig
@@ -116,6 +131,7 @@ namespace CarDrawing.Core
         public GcsConfig gcs = new GcsConfig();
         public FilterConfig filter = new FilterConfig();
         public GalleryConfig gallery = new GalleryConfig();
+        public VideoConfig video = new VideoConfig();
     }
 
     /// <summary>

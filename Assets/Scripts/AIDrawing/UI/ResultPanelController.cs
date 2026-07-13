@@ -3,6 +3,7 @@ using CarDrawing.Core;
 using CarDrawing.Results;
 using UnityEngine;
 using UnityEngine.UI;
+using UnityEngine.Video;
 
 namespace CarDrawing.UI
 {
@@ -31,11 +32,18 @@ namespace CarDrawing.UI
         private Text _galleryButtonLabel;
         private bool _gallerySubmitted;
 
-        // 표시할 데이터를 캐시한다. SetImages/ShowQr는 이 패널이 활성화(=Awake로 UI 생성)되기 전에
+        // 결과 영상 재생 (마일스톤 ⑥). 영상이 도착하면 결과 RawImage의 텍스처를 이미지→영상으로 교체한다.
+        // VideoPlayer는 처음 필요할 때 한 번 만들어 재사용한다 (패널 자식은 Awake마다 파괴되므로 자기 자신에 붙임)
+        private VideoPlayer _videoPlayer;
+        private Text _videoPendingLabel;
+
+        // 표시할 데이터를 캐시한다. SetImages/ShowQr/ShowVideo는 이 패널이 활성화(=Awake로 UI 생성)되기 전에
         // 호출될 수 있어(인수인계 §6 함정), 값을 캐시해 두고 어느 쪽이 먼저 실행돼도 최종 반영되게 한다.
         private Texture _pendingSketch;
         private Texture _pendingResult;
         private string _pendingQrUrl;
+        private string _pendingVideoPath;
+        private bool _videoPending; // 영상 생성이 백그라운드에서 진행 중 — 안내 문구 표시
 
         private void Awake()
         {
@@ -60,6 +68,11 @@ namespace CarDrawing.UI
             _result = CreateLabeledImage(background.transform, "Result",
                 TextLibrary.Get("result.resultLabel"), new Vector2(445, 95));
 
+            // 영상 준비 안내 (결과 라벨 아래, 하단 버튼 위). 영상이 도착하거나 실패하면 사라진다
+            _videoPendingLabel = UiBuilder.CreateText(background.transform, "VideoPendingLabel",
+                TextLibrary.Get("result.videoPending"), 26, new Color(0.45f, 0.48f, 0.55f));
+            UiBuilder.Place((RectTransform)_videoPendingLabel.transform, new Vector2(445, -272), new Vector2(700, 40));
+
             // QR 한 벌 (좌하단). 업로드가 완료될 때만 보인다. 라벨(캡션) 하단 -255보다 아래에서 시작
             Image qrFrame = UiBuilder.CreateImage(background.transform, "QrFrame", Color.white);
             UiBuilder.Place((RectTransform)qrFrame.transform, new Vector2(-780, -390), new Vector2(210, 210));
@@ -83,15 +96,22 @@ namespace CarDrawing.UI
             _galleryButtonLabel = _galleryButton.GetComponentInChildren<Text>();
             _galleryButton.onClick.AddListener(OnGalleryClicked);
 
-            // SetImages/ShowQr가 Awake보다 먼저 호출됐다면 캐시해 둔 값을 지금 반영한다
+            // SetImages/ShowQr/ShowVideo가 Awake보다 먼저 호출됐다면 캐시해 둔 값을 지금 반영한다
             ApplyTextures();
             ApplyQr();
             ApplyGalleryButton();
+            ApplyVideo();
         }
 
         private void OnDestroy()
         {
             if (_qrTexture != null) Destroy(_qrTexture);
+        }
+
+        private void OnDisable()
+        {
+            // 패널이 닫히면(대기 복귀·다시 그리기) 재생을 멈춘다 — 다음 세션에서 이전 영상이 이어 나오지 않도록
+            StopVideo();
         }
 
         /// <summary>
@@ -106,9 +126,39 @@ namespace CarDrawing.UI
             _pendingResult = result;
             _pendingQrUrl = null;      // 이전 세션의 QR이 새 결과에 붙지 않도록
             _gallerySubmitted = false; // 전시 신청은 세션마다 다시 받는다
+            _pendingVideoPath = null;  // 이전 세션의 영상도 새 결과에 붙지 않도록
+            _videoPending = false;
             ApplyTextures();
             ApplyQr();
             ApplyGalleryButton();
+            ApplyVideo();
+        }
+
+        /// <summary>
+        /// 영상 생성이 백그라운드에서 시작됐음을 알린다 — 안내 문구를 띄운다 (AppFlowManager가 호출).
+        /// </summary>
+        public void ShowVideoPending()
+        {
+            _videoPending = true;
+            ApplyVideo();
+        }
+
+        /// <summary>
+        /// 완성된 결과 영상을 재생한다 — 결과 이미지를 영상으로 교체 (AppFlowManager가 생성 콜백에서 호출).
+        /// </summary>
+        /// <param name="mp4Path">SessionStore에 저장된 mp4 파일 경로</param>
+        public void ShowVideo(string mp4Path)
+        {
+            _pendingVideoPath = mp4Path;
+            _videoPending = false;
+            ApplyVideo();
+        }
+
+        /// <summary>영상 생성 실패 시 안내 문구만 내린다 — 이미지가 그대로 남는다 (폴백)</summary>
+        public void HideVideoPending()
+        {
+            _videoPending = false;
+            ApplyVideo();
         }
 
         /// <summary>
@@ -154,6 +204,56 @@ namespace CarDrawing.UI
             if (_galleryButton == null) return;
             _galleryButton.interactable = !_gallerySubmitted;
             _galleryButtonLabel.text = TextLibrary.Get(_gallerySubmitted ? "result.galleryDone" : "result.gallery");
+        }
+
+        // 캐시된 영상 상태를 반영한다. UI가 아직 없으면(Awake 전) 캐시만 남는다 — Awake가 다시 부른다.
+        private void ApplyVideo()
+        {
+            if (_videoPendingLabel != null)
+                _videoPendingLabel.gameObject.SetActive(_videoPending);
+            if (_result == null) return;
+
+            if (string.IsNullOrEmpty(_pendingVideoPath))
+            {
+                // 영상 없음(새 세션·실패) — 재생을 멈추고 이미지 표시로 되돌린다
+                StopVideo();
+                _result.texture = _pendingResult;
+                return;
+            }
+
+            if (_videoPlayer == null)
+            {
+                // APIOnly 모드: 준비 완료 후 VideoPlayer.texture를 RawImage에 꽂는 방식 —
+                // RenderTexture를 영상 크기에 맞춰 따로 관리할 필요가 없다
+                _videoPlayer = gameObject.AddComponent<VideoPlayer>();
+                _videoPlayer.playOnAwake = false;
+                _videoPlayer.isLooping = true; // 2~3초 클립을 계속 반복 — 전시 표시에 자연스럽다
+                _videoPlayer.renderMode = VideoRenderMode.APIOnly;
+                _videoPlayer.audioOutputMode = VideoAudioOutputMode.None;
+                _videoPlayer.prepareCompleted += vp =>
+                {
+                    if (_result != null) _result.texture = vp.texture;
+                    vp.Play();
+                };
+                _videoPlayer.errorReceived += (vp, message) =>
+                {
+                    // 재생 실패(코덱 등)는 이미지 폴백으로 조용히 복귀 (예외로 죽지 않기)
+                    LogManager.Warn($"[ResultPanel] 영상 재생 실패 — 이미지 유지: {message}");
+                    _pendingVideoPath = null;
+                    ApplyVideo();
+                };
+            }
+
+            _videoPlayer.Stop();
+            _videoPlayer.url = "file://" + _pendingVideoPath.Replace('\\', '/');
+            _videoPlayer.Prepare();
+        }
+
+        // 재생 중이면 멈춘다. RawImage 텍스처 복원은 호출부(ApplyVideo/SetImages)가 책임진다
+        private void StopVideo()
+        {
+            if (_videoPlayer != null && (_videoPlayer.isPlaying || _videoPlayer.isPrepared))
+                _videoPlayer.Stop();
         }
 
         private void OnGalleryClicked()

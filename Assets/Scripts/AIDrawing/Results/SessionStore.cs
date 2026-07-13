@@ -59,8 +59,24 @@ namespace CarDrawing.Results
             return path;
         }
 
+        /// <summary>
+        /// 결과 영상(mp4)을 Sessions 폴더에 저장한다 (마일스톤 ⑥).
+        /// </summary>
+        /// <param name="sessionId">세션 ID</param>
+        /// <param name="resultMp4">영상 생성기가 만든 mp4 바이트</param>
+        /// <returns>저장된 파일 경로 (VideoPlayer가 이 경로를 재생한다)</returns>
+        public static string SaveResultVideo(string sessionId, byte[] resultMp4)
+        {
+            Directory.CreateDirectory(SessionsDir);
+            string path = Path.Combine(SessionsDir, sessionId + "_result.mp4");
+            File.WriteAllBytes(path, resultMp4);
+            return path;
+        }
+
         /// <summary>세션의 결과 이미지 경로 (Sessions 폴더 기준). 파일 존재는 보장하지 않는다</summary>
         public static string ResultPath(string sessionId) => Path.Combine(SessionsDir, sessionId + "_result.png");
+        /// <summary>세션의 결과 영상 경로. 파일 존재는 보장하지 않는다 (영상 생성 실패 시 없음)</summary>
+        public static string ResultVideoPath(string sessionId) => Path.Combine(SessionsDir, sessionId + "_result.mp4");
         /// <summary>세션의 스케치(색 레이어) 경로. VLM 필터가 낙서 원본을 검사할 때 쓴다</summary>
         public static string SketchPath(string sessionId) => Path.Combine(SessionsDir, sessionId + "_sketch.png");
 

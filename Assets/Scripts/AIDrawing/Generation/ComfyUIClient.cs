@@ -1,5 +1,6 @@
 using System;
 using System.Collections;
+using System.Collections.Generic;
 using System.IO;
 using System.Text;
 using CarDrawing.Core;
@@ -34,8 +35,10 @@ namespace CarDrawing.Generation
         private const float WarmupRetryDelaySeconds = 5f;
 
         /// <summary>
-        /// 서버를 예열한다. 앱 시작 시 1회 호출: 더미 생성으로 모델을 미리 VRAM에 적재해
-        /// 콜드 스타트 첫 생성이 30초 타임아웃을 넘겨 "첫 이미지가 안 나오는" 문제(인수인계 §6)를 없앤다.
+        /// 서버를 예열한다. 앱 시작 시 1회 호출: 더미 생성으로 모델을 미리 적재해
+        /// 콜드 스타트 첫 생성이 타임아웃을 넘겨 "첫 이미지가 안 나오는" 문제(인수인계 §6)를 없앤다.
+        /// 스타일 전용 체크포인트(카툰 ToonYou 등)도 모두 예열한다 — 이걸 안 하면 해당 스타일
+        /// 첫 생성이 2GB+ 콜드 디스크 로드로 타임아웃난다(카툰 생성 실패의 실제 원인, 2026-07-13).
         /// 결과는 버리며, 서버가 아직 안 떠 있으면 잠시 뒤 재시도한다. 관람객 체험을 막지 않는다(백그라운드).
         /// </summary>
         public void Warmup()
@@ -49,13 +52,15 @@ namespace CarDrawing.Generation
         {
             LogManager.Info("[ComfyUI] 워밍업 시작 (모델 예열)");
             byte[] dummy = MakeDummyPng();
-            // 스타일은 아무거나 무방(결과 폐기). 목록 폴백이 보장되므로 0번 사용
-            StylePreset style = StyleLibrary.Styles[0];
+            IReadOnlyList<StylePreset> styles = StyleLibrary.Styles;
+            // 기본 체크포인트(워크플로 내장 = 실사) 스타일. 목록 폴백이 보장되므로 0번 사용
+            StylePreset primary = styles[0];
 
+            // 1) 서버 기동 감지 + 기본 체크포인트 예열 (부팅 시 서버가 늦게 뜨면 재시도)
             for (int attempt = 1; attempt <= WarmupMaxAttempts && !_warmedUp; attempt++)
             {
                 bool done = false, ok = false;
-                Generate("warmup", dummy, dummy, style,
+                Generate("warmup", dummy, dummy, primary,
                     _ => { ok = true; done = true; },
                     _ => { done = true; });
                 while (!done) yield return null;
@@ -63,7 +68,7 @@ namespace CarDrawing.Generation
                 if (ok)
                 {
                     _warmedUp = true;
-                    LogManager.Info("[ComfyUI] 워밍업 완료 (모델 예열됨)");
+                    LogManager.Info("[ComfyUI] 워밍업: 기본 체크포인트 예열 완료");
                 }
                 else if (attempt < WarmupMaxAttempts)
                 {
@@ -77,6 +82,31 @@ namespace CarDrawing.Generation
                     LogManager.Warn("[ComfyUI] 워밍업 최종 실패 — 첫 실제 생성 때 모델이 적재된다");
                 }
             }
+            if (!_warmedUp) { _warmingUp = false; yield break; }
+
+            // 2) 스타일 전용 체크포인트 예열. 한 번 적재하면 OS 파일 캐시에 남아 이후 스타일 전환 스왑이
+            //    콜드 디스크 로드(수십 초) → 웜 스왑(~7초)으로 빨라진다. 8GB VRAM이라 상주는 하나뿐이지만
+            //    목적은 VRAM 상주가 아니라 디스크 캐시 적재다.
+            var warmed = new HashSet<string> { primary.checkpoint ?? "" };
+            bool warmedExtra = false;
+            foreach (StylePreset style in styles)
+            {
+                string ckpt = string.IsNullOrEmpty(style.checkpoint) ? "" : style.checkpoint;
+                if (!warmed.Add(ckpt)) continue; // 이미 예열한 체크포인트는 건너뜀
+                bool done = false;
+                LogManager.Info($"[ComfyUI] 워밍업: 스타일 체크포인트 예열 ({ckpt})");
+                Generate("warmup", dummy, dummy, style, _ => done = true, _ => done = true);
+                while (!done) yield return null;
+                warmedExtra = true;
+            }
+            // 전용 체크포인트를 예열했으면 VRAM 상주를 기본(실사)으로 되돌린다 — 가장 흔한 첫 선택이 스왑 없이 뜨도록
+            if (warmedExtra)
+            {
+                bool done = false;
+                Generate("warmup", dummy, dummy, primary, _ => done = true, _ => done = true);
+                while (!done) yield return null;
+            }
+            LogManager.Info("[ComfyUI] 워밍업 완료 (모든 체크포인트 예열됨)");
             _warmingUp = false;
         }
 
@@ -228,12 +258,41 @@ namespace CarDrawing.Generation
             JObject workflow = JObject.Parse(File.ReadAllText(path));
 
             // 인수인계 §5의 치환 표: 3=긍정, 4=부정, 5=색 레이어, 6=선 레이어, 11=seed/denoise
-            workflow["3"]["inputs"]["text"] = style.prompt;
             workflow["4"]["inputs"]["text"] = style.negativePrompt;
             workflow["5"]["inputs"]["image"] = colorName;
             workflow["6"]["inputs"]["image"] = lineName;
             workflow["11"]["inputs"]["seed"] = UnityEngine.Random.Range(1, int.MaxValue); // 매회 다른 결과가 나오도록
             workflow["11"]["inputs"]["denoise"] = style.denoise;
+            // 실사 모델로는 화풍이 안 나오는 스타일(카툰 등)만 전용 체크포인트로 교체. 스타일이 바뀌는 첫 생성은 모델 적재로 몇 초 느려진다
+            if (!string.IsNullOrEmpty(style.checkpoint))
+                workflow["1"]["inputs"]["ckpt_name"] = style.checkpoint;
+            if (style.controlnetStrength > 0f)
+                workflow["9"]["inputs"]["strength"] = style.controlnetStrength;
+
+            // 스타일 전용 LoRA(픽셀아트 등): 체크포인트 위에 화풍 LoRA를 얹는다. 노드 20을 체크포인트와
+            // 소비자(CLIP 3·4, KSampler 11) 사이에 끼워 model·clip을 LoRA 출력으로 돌린다
+            string positive = style.prompt;
+            if (!string.IsNullOrEmpty(style.lora))
+            {
+                workflow["20"] = new JObject
+                {
+                    ["class_type"] = "LoraLoader",
+                    ["inputs"] = new JObject
+                    {
+                        ["model"] = new JArray { "1", 0 },
+                        ["clip"] = new JArray { "1", 1 },
+                        ["lora_name"] = style.lora,
+                        ["strength_model"] = style.loraStrength,
+                        ["strength_clip"] = style.loraStrength
+                    }
+                };
+                workflow["3"]["inputs"]["clip"] = new JArray { "20", 1 };
+                workflow["4"]["inputs"]["clip"] = new JArray { "20", 1 };
+                workflow["11"]["inputs"]["model"] = new JArray { "20", 0 };
+                if (!string.IsNullOrEmpty(style.loraTrigger))
+                    positive = style.loraTrigger + ", " + positive;
+            }
+            workflow["3"]["inputs"]["text"] = positive;
 
             var payload = new JObject { ["prompt"] = workflow, ["client_id"] = _clientId };
             return payload.ToString(Formatting.None);

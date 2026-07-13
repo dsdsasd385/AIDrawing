@@ -1,6 +1,6 @@
 # AI 자동차 드로잉 체험 — 인수인계 문서
 
-> 최종 갱신: 2026-07-10
+> 최종 갱신: 2026-07-13
 > 새 담당자(개발자 또는 AI 에이전트)가 이 문서 하나로 환경을 재구성하고 작업을 이어받을 수 있도록 작성한다.
 
 ## 문서 3종의 역할과 갱신 시점
@@ -58,6 +58,29 @@ venv\Scripts\pip install -r requirements.txt
 | `controlnet\` | `https://huggingface.co/comfyanonymous/ControlNet-v1-1_fp16_safetensors/resolve/main/control_v11p_sd15_scribble_fp16.safetensors` |
 | `vae\` | `https://huggingface.co/stabilityai/sd-vae-ft-mse-original/resolve/main/vae-ft-mse-840000-ema-pruned.safetensors` |
 
+**영상 생성(마일스톤 ⑥)용 추가 구성 (2026-07-13 PoC에서 도입)**:
+
+```bat
+cd C:\Users\<사용자>\ComfyUI\custom_nodes
+git clone --depth 1 https://github.com/Kosinkadink/ComfyUI-AnimateDiff-Evolved.git
+git clone --depth 1 https://github.com/Kosinkadink/ComfyUI-VideoHelperSuite.git
+..\venv\Scripts\pip install opencv-python imageio-ffmpeg
+```
+
+| 대상 폴더 (`ComfyUI\models\`) | URL |
+| --- | --- |
+| `animatediff_models\` | `https://huggingface.co/guoyww/animatediff/resolve/main/mm_sd_v15_v2.ckpt` → 파일명 `mm_sd15_v2.ckpt` |
+| `animatediff_motion_lora\` | `https://huggingface.co/guoyww/animatediff/resolve/main/v2_lora_PanLeft.ckpt` (77MB, **영상 움직임의 핵심** — §6) |
+
+(같은 폴더의 AnimateLCM 2종은 품질 기각된 잔재 — 삭제해도 무방. §6 함정 참조. `v2_lora_ZoomIn`·`v2_lora_TiltUp`은 대안 카메라 모션으로 실험용 — 현재 워크플로는 PanLeft만 사용)
+
+**스타일 전용 모델 (2026-07-13 도입, 계획서 §8)**:
+
+| 대상 폴더 (`ComfyUI\models\`) | URL |
+| --- | --- |
+| `checkpoints\` | `https://huggingface.co/pbxadb/sd1.5-Models/resolve/main/toonyou_beta6.safetensors` (2.3GB, 카툰용, 원본은 CivitAI ToonYou Beta 6) |
+| `loras\` | `https://huggingface.co/artificialguybr/pixelartredmond-1-5v-pixel-art-loras-for-sd-1-5/resolve/main/PixelArtRedmond15V-PixelArt-PIXARFK.safetensors` → 파일명 `PixelArtRedmond15V.safetensors` (27MB, **픽셀아트용**, 트리거 `Pixel Art, PixArFK`) |
+
 설치 후 `Tools\run_comfyui.bat`의 경로를 새 PC에 맞게 수정한다 (현재 `C:\Users\HULIAC\ComfyUI` 하드코딩).
 
 동작 확인: 브라우저에서 `http://127.0.0.1:8188` 접속 → UI가 뜨면 정상.
@@ -89,6 +112,8 @@ DrawingCanvas (선 RT + 색 RT)
   → ComfyUIClient (업로드 → /prompt → 폴링 → 결과 PNG)
   → SessionStore.SaveResult
   → ResultPanel 표시
+      ├→ ComfyUIVideoGenerator (IVideoGenerator, 백그라운드 ~40초 → 성공 시 SessionStore.SaveResultVideo
+      │     + ResultPanel.ShowVideo로 이미지→영상 교체, 실패 시 이미지 유지 — 관람객은 실패를 모른다)
       ├→ B2Uploader/GcsUploader (비동기 업로드 → 성공 시 ResultPanel.ShowQr, 실패/미설정 시 QR 숨김 유지)
       └→ [전시장에 내 작품 걸기] → ContentFilter.Evaluate (백그라운드)
             → 통과: SessionStore.AddToGallery (Gallery/) → GallerySlideshow가 폴더 감시로 자동 반영
@@ -111,10 +136,13 @@ Unity 클라이언트가 실행 시 치환하는(할) 필드 — **노드 ID를 
 
 | 노드 ID | 클래스 | 치환 대상 |
 | --- | --- | --- |
-| `"3"` | CLIPTextEncode | 긍정 프롬프트 (스타일별) |
+| `"1"` | CheckpointLoaderSimple | 스타일에 `checkpoint`가 있을 때만 교체 (카툰=toonyou_beta6, 2026-07-13) |
+| `"20"` | LoraLoader (동적 주입) | 스타일에 `lora`가 있으면 클라이언트가 노드 1과 소비자(3·4·11) 사이에 끼운다 (픽셀=PixelArtRedmond, 2026-07-13). model→11, clip→3·4로 재연결 + 트리거를 긍정 프롬프트 앞에 붙임 |
+| `"3"` | CLIPTextEncode | 긍정 프롬프트 (스타일별, LoRA 트리거 prepend) |
 | `"4"` | CLIPTextEncode | 부정 프롬프트 (스타일별) |
 | `"5"` | LoadImage | 색 레이어 파일명 (`color.png` → 업로드한 파일명) |
 | `"6"` | LoadImage | 선 레이어 파일명 (`line.png` → 업로드한 파일명) |
+| `"9"` | ControlNetApplyAdvanced | 스타일에 `controlnetStrength` > 0일 때만 `strength` 교체 (카툰=0.5) — 파일 기본값 0.35는 그대로 유지 |
 | `"11"` | KSampler | `seed`(매회 랜덤), `denoise`(스타일별) |
 
 품질 튜닝 시 만지는 순서 (한 번에 하나씩):
@@ -139,8 +167,11 @@ Unity 클라이언트가 실행 시 치환하는(할) 필드 — **노드 ID를 
 | **클레이 프롬프트에 손 관련 단어 금지** | "handcrafted"·"stop motion" 계열 단어가 점토 손·받침대를 소환한다 (2026-07-10 실측: 클레이 손이 차를 들고 있는 결과). "handcrafted" 제거 + 부정 프롬프트에 hands, fingers, arms, person, stand, pedestal 유지 필수 |
 | **색 유도 단어가 관람객 색을 지운다** | "limited color palette"(픽셀)·"vibrant flat colors"(카툰)는 AI가 색을 마음대로 재배정하는 원인 (2026-07-10 매트릭스 실측). "colors matching the drawing"으로 교체 + 카툰·픽셀 denoise 0.7로 색 보존. 색 충실도의 실질 레버는 denoise (0.8=색 재해석, 0.7=색 유지) |
 | **모서리에 작게 그린 그림·반절림 그림은 취약** | 화면 구석의 작은 그림은 빈 공간을 AI가 채운다 — 실사는 색 무시, 카툰은 미완성 낙서 덩어리, 클레이는 멀티카(부정 프롬프트 multiple cars로도 못 막음). 픽셀만 안정. 차가 화면 밖으로 반쯤 잘린 그림(2026-07-10 검증)도 마찬가지 — 카툰은 유령차 낙서 동반, 픽셀은 가장자리 반절림에서 파편화, 클레이는 잘린 차를 멋대로 완성차로 채움. 정면 그림 + 실사 조합도 탑뷰·포스터 구도로 샐 수 있음. 프롬프트로 못 잡는 구조적 한계라 운영 대응은 그리기 안내 문구("차 전체를 크게 그려주세요") 수준 |
-| **픽셀 스타일 프롬프트 이력과 주의점** | 16-bit crisp/retro 계열 단어는 결과가 깨져 보이는(노이즈 픽셀) 원인이었음. 최종안(2026-07-10)은 **품질 강조판** — (masterpiece/best quality 앵커) + accurate vehicle proportions·clean silhouette·4-6 color ramp shading·colored outlines·minimal dithering. 빨강·초록 3/3, 노랑 1~2/3 검증. **주의**: 긍정에 dithering 계열 단어가 있으면 부정의 dithering을, 소프트/AA 계열이면 부정의 smooth gradient/antialiased를 함께 제거해야 함 (정면충돌 시 조용히 품질 저하). 색이 옅어지면 "vibrant colors matching the drawing" 추가가 검증된 보완책 |
-| **Realistic Vision으로 비실사 스타일 생성** | 체크포인트가 실사 특화라 카툰/픽셀/클레이는 스타일 가중치 `:1.4` + 부정에 photorealistic/photo/3d render 차단이 있어야 스타일이 잡힌다. 색칠한 그림은 4종 모두 안정, 선 몇 개 낙서는 시드 편차 존재 (denoise 0.8·CN 0.35에서도) |
+| **픽셀 스타일 프롬프트 이력 (2026-07-13 LoRA 방식으로 대체 — 위 "픽셀아트는 LoRA 방식" 함정 참조)** | 아래는 RV+프롬프트 시절 이력(역사적 참고용). 16-bit crisp/retro 계열 단어는 결과가 깨져 보이는(노이즈 픽셀) 원인이었음. 최종안(2026-07-10)은 **품질 강조판** — (masterpiece/best quality 앵커) + accurate vehicle proportions·clean silhouette·4-6 color ramp shading·colored outlines·minimal dithering. 빨강·초록 3/3, 노랑 1~2/3 검증. **주의**: 긍정에 dithering 계열 단어가 있으면 부정의 dithering을, 소프트/AA 계열이면 부정의 smooth gradient/antialiased를 함께 제거해야 함 (정면충돌 시 조용히 품질 저하). 색이 옅어지면 "vibrant colors matching the drawing" 추가가 검증된 보완책 |
+| **Realistic Vision으로 비실사 스타일 생성** | 체크포인트가 실사 특화라 픽셀/클레이는 스타일 가중치 `:1.4` + 부정에 photorealistic/photo/3d render 차단이 있어야 스타일이 잡힌다. **카툰은 이 방식으로는 상한이 낮아 2026-07-13 전용 체크포인트(ToonYou)로 분리** — 클레이가 RV에서 잘 나오는 건 점토(스톱모션)가 사진의 피사체이기 때문이며, 플랫 컬러·만화 외곽선은 실사 모델이 근본적으로 못 그린다 |
+| **전용 체크포인트 스타일은 부팅 워밍업 필수** | 카툰(ToonYou 2.3GB)처럼 기본 워크플로와 다른 체크포인트를 쓰는 스타일은, 관람객이 처음 고르면 그 모델을 디스크에서 콜드 로드하느라 첫 생성이 타임아웃난다 (2026-07-13 실측, 카툰 생성 실패의 원인). `ComfyUIClient.Warmup()`이 **모든 스타일의 distinct 체크포인트를 부팅 시 예열**하도록 확장함 — 콜드 디스크 로드를 부팅으로 옮기면 이후 스타일 전환 스왑은 OS 파일 캐시 덕에 ~7초. 8GB VRAM이라 상주는 하나뿐이지만 목적은 VRAM이 아니라 디스크 캐시 적재. 예열이 콜드 로드를 견디도록 `generateTimeoutSeconds`를 45→**90**으로 상향(둘 다 이 값을 공유). 새 전용 체크포인트 스타일을 추가하면 Styles.json `checkpoint`만 채우면 워밍업이 자동 포함 |
+| **ToonYou(카툰 체크포인트)는 캐릭터 편향** | 애니메이션 캐릭터 학습 비중이 커서 ①빈(무채색) 창문에 운전자 캐릭터를 그려 넣고 ②약한 ControlNet(0.35)에서는 스케치 구도를 무시하고 정면 뷰 등으로 재해석한다 (2026-07-13 A~L 12종 비교 실측). 대응: booru 태그(`no humans, vehicle focus`) + 가중 네거티브(`(person:1.3)` 등) + **CN 0.5**로 구도 고정. 운전자는 빈도만 줄었고 무채색 낙서에서는 여전히 나올 수 있음 — 귀여운 수준이라 수용 결정. 색칠한 그림에서는 관람객 색이 잘 유지됨(denoise 0.75) |
+| **SD1.5 프롬프트는 77토큰 초과분을 버린다** | CLIP 한계로 긴 프롬프트의 뒷부분은 조용히 무시된다 (2026-07-13 영상 프롬프트에서 실측 — 장문 액션 서술이 전혀 반영 안 됨). 이미지·영상 프롬프트 모두 77토큰 내로 유지할 것. 강조가 필요하면 문장을 늘리지 말고 `(단어:1.3)` 가중치를 쓸 것 |
 | **"첫 이미지 안 나옴" — 원인 2개, 둘 다 대응 완료(2026-07-09)** | ①**콜드 모델 로딩**: 첫 생성은 모델 적재로 실측 31.66초, 클라 타임아웃 30초라 첫 관람객만 사과 화면. ②**폴링 캐싱**: 첫 생성 때 `/history/{id}` 반복 GET에서 "아직 없음" 응답이 캐시돼 완료 후에도 갱신 안 됨 → 서버는 8~10초에 끝났는데 클라가 45초 타임아웃(콜드 재시작 실측 재현). **대응**: (a) `ComfyUIClient.Warmup()` — 앱 시작 시 더미 생성 1회로 모델 예열(AppFlowManager.Start에서 호출, 서버 늦게 뜨면 3회 재시도), (b) PollHistory URL에 캐시버스터(`?t=ticks`)+`Cache-Control: no-cache`, (c) `generateTimeoutSeconds` 30→45. 실측: 콜드 재시작 후 워밍업이 첫 시도에 완료, 이어 실제 생성이 Result까지 정상 도달 |
 | **RenderTexture는 플레이 모드에서 생성** | DrawingCanvas.Awake에서 만들므로 에디트 모드에서 캔버스가 비어 보이는 건 정상 |
 | **PS 5.1에서 JSON 만들 때** | `Out-File`은 BOM을 붙여 unity-mcp-cli가 거부. `[System.IO.File]::WriteAllText` 사용, 문자열은 `[string]` 캐스팅 |
@@ -160,6 +191,11 @@ Unity 클라이언트가 실행 시 치환하는(할) 필드 — **노드 ID를 
 | **스토리지 키는 프로젝트 밖 Config/ 폴더** | 키 경로 기본값(`Config/b2-key.json`, `Config/gcs-key.json`)은 exe 옆(에디터: 프로젝트 루트) 기준 상대 경로다. `/[Cc]onfig/`가 .gitignore에 있어 커밋되지 않는다. StreamingAssets에 넣으면 빌드에 포함되므로 금지 |
 | **에디터에서 Display 2 확인** | 빌드 없이 Game 뷰 탭 2개를 열고 각각 Display 1/Display 2를 지정하면 갤러리 월이 보인다. `Display.displays[1].Activate()`는 빌드 전용(`#if !UNITY_EDITOR`) |
 | **run_comfyui.bat은 ASCII 전용으로 유지** | 배치 파일에 한국어 주석을 UTF-8로 저장하면 cmd(cp949)가 줄 경계를 잘못 잘라 **스크립트가 조용히 아무것도 안 한다** (2026-07-10 실측: `'ONIOENCODING' is not recognized` 식으로 깨짐). 주석은 영문만. 서버 출력은 `ComfyUI\comfyui_run.log`로 남긴다 — 서버가 죽으면 이 파일부터 볼 것. `PYTHONIOENCODING=utf-8`은 cp949 콘솔의 UnicodeEncodeError 사망 방지용으로 유지 |
+| **영상: AnimateLCM 조합은 품질 붕괴 — 기각** | AnimateLCM(모듈+LoRA+lcm 샘플러)은 beta 2종·denoise 0.35~0.55·512/768 전 조합에서 유화풍 질감 붕괴 + 차종 변형 (2026-07-13 실측). **표준 `mm_sd15_v2` + dpmpp_2m/karras 20스텝 cfg 7 + beta `sqrt_linear (AnimateDiff)`가 채택 조합** — 같은 입력에서 실사 크리스프. "3060이라 LCM으로 빨라야" 가정은 불필요했음(512×344 16프레임 40초로 충분) |
+| **픽셀아트는 LoRA 방식 (후처리 강한 픽셀화는 모자이크가 됨)** | RV+프롬프트의 픽셀 출력은 흐릿하고, 여기에 강한 후처리(128px/6단계)를 걸면 모자이크처럼 뭉갠다(2026-07-13 실측·사용자 보고). **해법은 픽셀 LoRA(PixelArtRedmond, §3)**: RV 위에 얹으면 선명한 정품 픽셀 스프라이트가 나온다(강도 0.8, 트리거 `Pixel Art, PixArFK`). 후처리는 그리드만 균일하게 스냅하는 용도로 **160px/8단계로 완화**. 카툰(ToonYou)과 같은 "전용 모델" 접근 |
+| **픽셀 영상은 LoRA + 프레임 재픽셀화 둘 다 필요** | 영상 워크플로(RV)에 LoRA를 안 얹으면 화풍을 잃고 매끈하게 다시 그린다. denoise만 낮추면 이번엔 움직임이 죽는다(denoise 0.3 → 모션 0.28, 정지). **해법**: `ComfyUIVideoGenerator`가 픽셀 스타일이면 ①영상 워크플로에 LoRA(노드 123, 체크포인트 101→AnimateDiff 104·CLIP 105·106 사이) 주입 + 트리거 prepend, ②VAEDecode(111) 뒤 ImageScale 노드 121·122로 재픽셀화 후 VHS(112)에 연결. denoise는 움직임 확보용 0.55~0.6 유지. LoRA有 영상 = 선명한 움직이는 픽셀 스프라이트(모션 4.2). 카툰·클레이 영상은 LoRA·픽셀화 불필요(RV가 스타일 보존) |
+| **영상 움직임은 카메라 모션 LoRA에서 나온다 (프롬프트·denoise 아님)** | "바퀴만 움직이고 티가 안 난다"의 실제 해법. 프롬프트(과격한 액션 서술)·motion_scale·denoise 상향 모두 움직임을 거의 못 만든다(2026-07-13 프레임 실측: 현재안 모션지표 1.6, 정지 영상 수준). **AnimateDiff 카메라 모션 LoRA(`v2_lora_PanLeft` 강도 0.8)를 노드 120에 추가**하니 카메라가 차를 따라 팬해서 눈에 확 띔 — 화면 전체가 움직여 차 형태도 안 뭉개진다. 워크플로: 노드 120 `ADE_AnimateDiffLoRALoader` → 노드 104의 `motion_lora` 입력. 더 큰 움직임은 강도 0.8→1.0. denoise는 움직임이 아니라 원본 대비 표류(차 디자인 변형)만 키우므로 낮게(0.45~0.6) 유지 |
+| **영상·이미지 워크플로는 노드 ID를 겹치면 안 됨** | 두 워크플로가 같은 노드 ID(예: 체크포인트 "1")를 쓰면 ComfyUI 프롬프트 간 캐시가 공유돼 AnimateDiff 실행 후 이미지 생성이 노이즈로 붕괴한다 (2026-07-13 실측). **영상 워크플로는 노드 ID 101번대 사용** — 분리 후 이미지↔영상 4연속 교대 실행 안정 확인. 영상 워크플로를 수정할 때 ID를 1~13번대로 되돌리지 말 것 |
 | **ComfyUI Desktop 앱은 불필요** | 설치본은 git+venv 방식(`C:\Users\HULIAC\ComfyUI`)이며 Desktop 앱과 무관. "서버가 안 뜬다"면 Desktop 설치가 아니라 ①`comfyui_run.log` 확인 ②`venv\Scripts\python.exe main.py --listen 127.0.0.1 --port 8188` 직접 실행으로 진단 |
 
 ---
@@ -189,7 +225,10 @@ Unity 클라이언트가 실행 시 치환하는(할) 필드 — **노드 ID를 
 - [ ] 이전 프로젝트 삭제분 clean slate 커밋 정리
 - [ ] Backblaze B2 계정·버킷·키 생성 (7장 절차대로 — 코드는 준비됨. GCS는 대안으로 강등)
 - [ ] VLM 필터 — 운영 형태 확정 시 결정 (7장 — 코드는 준비됨, 기본 filter.enabled=false, 보류 중)
-- [x] ~~스타일 프리셋 3~4종 확정~~ (2026-07-10 — 4종 프롬프트·denoise 확정, 작업현황 §1)
+- [x] ~~스타일 프리셋 3~4종 확정~~ (2026-07-10 — 4종 프롬프트·denoise 확정 → 2026-07-13 카툰 전용 체크포인트·픽셀 그리드 스냅으로 재확정, 작업현황 §1)
+- [ ] 카툰(ToonYou)·픽셀(PixelArtRedmond LoRA) 개편 플레이 검증 (이미지+영상) + 예시 썸네일(StyleExamples/cartoon.png·pixelart.png) 새 결과물로 교체
+- [ ] 카툰 이미지 → 영상 스타일 불일치 (영상 워크플로는 RV 고정이라 카툰 결과가 실사풍으로 되칠해짐) — 스타일별 영상 프롬프트/체크포인트 연동 여부 결정
 - [ ] 관리자 모드 진입 키 조합·비밀번호 확정 (계획서 11장, 예시: Ctrl+Shift+F12)
 - [ ] Build Settings에 씬 등록 + Windows 빌드 검증
 - [ ] 전시장 PC 사양·인터넷 회선 확정 시 재검토 (현재는 개발 PC = 전시 PC 가정)
+- [ ] 마일스톤 ⑥ 결과 영상화 — ~~AnimateDiff PoC~~ → ~~Unity 코드·씬 구성~~ (2026-07-13 완료) → **플레이 검증 + 모션 튜닝 + B2 영상 업로드·갤러리 영상 결정** (작업현황 §3). 외부 API 전환 시 회선·건당 과금(~$0.25) 확정 필요

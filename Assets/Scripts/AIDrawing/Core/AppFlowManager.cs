@@ -47,6 +47,8 @@ namespace CarDrawing.Core
         [SerializeField] private GcsUploader gcsUploader;
         /// <summary>갤러리 게이트 필터 (계획서 10장)</summary>
         [SerializeField] private ContentFilter contentFilter;
+        /// <summary>결과 영상 생성기 (마일스톤 ⑥) — 로컬 ComfyUI(AnimateDiff) 구현. 없거나 꺼져 있으면 이미지-only</summary>
+        [SerializeField] private ComfyUIVideoGenerator videoGenerator;
 
         private AppState _state;
         private string _sessionId;
@@ -55,6 +57,10 @@ namespace CarDrawing.Core
         // 결과 비교·미리보기용 CPU 텍스처. 세션 종료(대기 복귀) 시 파괴한다
         private Texture2D _sketchTexture;
         private Texture2D _resultTexture;
+        // 현재 세션의 영상 생성이 백그라운드에서 진행 중인지. 결과 화면 자동 복귀를 보류하는 데 쓴다
+        private bool _videoInProgress;
+        // 이번 세션에서 선택된 스타일. 결과 후처리(픽셀화)가 참조한다
+        private StylePreset _chosenStyle;
         // 방치 팝업 상태 (그리기 화면 전용, 계획서 4장: 90초 팝업 + 30초 유예)
         private bool _idlePopupShown;
         private float _idlePopupShownAt;
@@ -111,6 +117,7 @@ namespace CarDrawing.Core
             if (b2Uploader == null) b2Uploader = FindObjectOfType<B2Uploader>(true);
             if (gcsUploader == null) gcsUploader = FindObjectOfType<GcsUploader>(true);
             if (contentFilter == null) contentFilter = FindObjectOfType<ContentFilter>(true);
+            if (videoGenerator == null) videoGenerator = FindObjectOfType<ComfyUIVideoGenerator>(true);
         }
 
         private void Update()
@@ -140,8 +147,14 @@ namespace CarDrawing.Core
                     break;
 
                 case AppState.Result:
-                    // 결과 화면 자동 복귀 (계획서 4장: 60초)
-                    if (Time.unscaledTime - _stateEnteredAt >= timing.resultReturnSeconds)
+                    // 결과 화면 자동 복귀 (계획서 4장: 60초).
+                    // 단 영상 생성이 진행 중이면 보류한다 — 영상(웜 ~45초, 콜드는 60초 초과)이 도착하기 전에
+                    // 세션이 만료되는 문제 실측(2026-07-13). 생성기 타임아웃(video.generateTimeoutSeconds)이
+                    // 반드시 콜백을 부르므로 무한 보류는 없지만, 콜백 유실 대비 상한을 한 번 더 둔다
+                    float resultLimit = _videoInProgress
+                        ? timing.resultReturnSeconds + ConfigManager.Config.video.generateTimeoutSeconds
+                        : timing.resultReturnSeconds;
+                    if (Time.unscaledTime - _stateEnteredAt >= resultLimit)
                         EnterState(AppState.Attract);
                     break;
             }
@@ -177,6 +190,7 @@ namespace CarDrawing.Core
             _sessionId = null;
             _linePng = null;
             _colorPng = null;
+            _videoInProgress = false; // 세션이 끝나면 보류도 해제 — 늦은 콜백은 세션 ID 가드가 걸러낸다
             if (_sketchTexture != null) { Destroy(_sketchTexture); _sketchTexture = null; }
             if (_resultTexture != null) { Destroy(_resultTexture); _resultTexture = null; }
         }
@@ -230,6 +244,7 @@ namespace CarDrawing.Core
         {
             if (_state != AppState.Style) return;
 
+            _chosenStyle = style; // 결과 후처리(픽셀화 등)가 스타일 설정을 참조한다
             EnterState(AppState.Generating);
             generatingPanel.Begin(_sketchTexture);
             LogManager.Info($"[AppFlow] 생성 요청: 세션 {_sessionId}, 스타일 {style.id}");
@@ -240,6 +255,9 @@ namespace CarDrawing.Core
         {
             // 생성 도중 상태가 바뀌었으면(이론상 없음) 늦게 온 결과를 버린다
             if (_state != AppState.Generating) return;
+
+            // 픽셀아트 등 후처리 스타일이면 여기서 변환 — 이후의 저장·표시·QR 업로드·영상이 전부 같은 그림을 쓴다
+            resultPng = PixelArtFilter.Apply(resultPng, _chosenStyle);
 
             try
             {
@@ -270,6 +288,46 @@ namespace CarDrawing.Core
                     resultPanel.ShowQr(url);
                 });
             }
+
+            StartVideoGeneration(resultPng);
+        }
+
+        // 결과 영상화 (마일스톤 ⑥): 결과 화면을 먼저 보여주고 백그라운드에서 영상을 만든다.
+        // 도착하면 이미지→영상 교체, 실패·타임아웃이면 이미지가 그대로 남는다 (폴백 — 관람객은 실패를 모른다)
+        private void StartVideoGeneration(byte[] resultPng)
+        {
+            _videoInProgress = false; // 이전 세션의 잔재 플래그 제거 (다시 그리기 경로)
+            if (videoGenerator == null || !videoGenerator.IsEnabled) return;
+
+            string videoSessionId = _sessionId;
+            _videoInProgress = true; // 진행 중에는 결과 화면 자동 복귀를 보류한다 (Update의 Result 분기)
+            resultPanel.ShowVideoPending();
+            LogManager.Info($"[AppFlow] 영상 생성 시작 (백그라운드): 세션 {videoSessionId}");
+
+            // 스타일을 넘겨 영상도 같은 화풍을 유지하게 한다 (픽셀아트 LoRA·픽셀화 — 안 넘기면 영상이 매끈하게 재해석됨)
+            videoGenerator.Generate(videoSessionId, resultPng, _linePng, _chosenStyle, mp4 =>
+            {
+                // 그 사이 다음 관람객으로 넘어갔으면 표시하지 않는다 (파일은 저장해 기록만 남긴다)
+                string path = null;
+                try { path = SessionStore.SaveResultVideo(videoSessionId, mp4); }
+                catch (System.Exception e) { LogManager.Error($"[AppFlow] 영상 저장 실패: {e.Message}"); }
+
+                if (_state != AppState.Result || _sessionId != videoSessionId) return;
+                _videoInProgress = false;
+                if (path == null) { resultPanel.HideVideoPending(); return; }
+                resultPanel.ShowVideo(path);
+                // 영상이 체험의 하이라이트라 감상 시간을 새로 준다 — 자동 복귀 타이머 리셋
+                _stateEnteredAt = Time.unscaledTime;
+                LogManager.Info($"[AppFlow] 영상 표시: {path}");
+            }, reason =>
+            {
+                // 실패는 로그만 — 결과 화면은 이미지로 계속 (Generate 내부가 이미 Warn을 남겼다)
+                if (_state == AppState.Result && _sessionId == videoSessionId)
+                {
+                    _videoInProgress = false; // 보류를 풀어 자동 복귀 타이머가 다시 돌게 한다
+                    resultPanel.HideVideoPending();
+                }
+            });
         }
 
         // 설정이 갖춰진 업로더를 고른다. 기본 B2(무료 티어), 대안 GCS — IResultUploader 계약 덕에 흐름은 동일

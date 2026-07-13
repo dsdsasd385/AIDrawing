@@ -1,0 +1,199 @@
+{
+  "101": {
+    "class_type": "CheckpointLoaderSimple",
+    "inputs": {
+      "ckpt_name": "Realistic_Vision_V5.1_fp16-no-ema.safetensors"
+    }
+  },
+  "102": {
+    "class_type": "VAELoader",
+    "inputs": {
+      "vae_name": "vae-ft-mse-840000-ema-pruned.safetensors"
+    }
+  },
+  "104": {
+    "class_type": "ADE_AnimateDiffLoaderGen1",
+    "inputs": {
+      "model": [
+        "101",
+        0
+      ],
+      "model_name": "mm_sd15_v2.ckpt",
+      "beta_schedule": "sqrt_linear (AnimateDiff)",
+      "motion_scale": 1.3,
+      "motion_lora": [
+        "120",
+        0
+      ]
+    }
+  },
+  "120": {
+    "class_type": "ADE_AnimateDiffLoRALoader",
+    "inputs": {
+      "name": "v2_lora_PanLeft.ckpt",
+      "strength": 0.8
+    }
+  },
+  "105": {
+    "class_type": "CLIPTextEncode",
+    "inputs": {
+      "text": "a car driving fast on an open road, spinning wheels, background rushing past with strong motion blur, low angle tracking shot, camera panning sideways, bouncing suspension, wind and dust trailing behind, dynamic, energetic motion, high quality, detailed",
+      "clip": [
+        "101",
+        1
+      ]
+    }
+  },
+  "106": {
+    "class_type": "CLIPTextEncode",
+    "inputs": {
+      "text": "static, still image, motionless, frozen frame, blurry, lowres, text, watermark, deformed, morphing, extra wheels",
+      "clip": [
+        "101",
+        1
+      ]
+    }
+  },
+  "107": {
+    "class_type": "LoadImage",
+    "inputs": {
+      "image": "result.png"
+    }
+  },
+  "108": {
+    "class_type": "VAEEncode",
+    "inputs": {
+      "pixels": [
+        "113",
+        0
+      ],
+      "vae": [
+        "102",
+        0
+      ]
+    }
+  },
+  "109": {
+    "class_type": "RepeatLatentBatch",
+    "inputs": {
+      "samples": [
+        "108",
+        0
+      ],
+      "amount": 16
+    }
+  },
+  "110": {
+    "class_type": "KSampler",
+    "inputs": {
+      "model": [
+        "104",
+        0
+      ],
+      "positive": [
+        "117",
+        0
+      ],
+      "negative": [
+        "117",
+        1
+      ],
+      "latent_image": [
+        "109",
+        0
+      ],
+      "seed": 42,
+      "steps": 20,
+      "cfg": 7.0,
+      "sampler_name": "dpmpp_2m",
+      "scheduler": "karras",
+      "denoise": 0.6
+    }
+  },
+  "111": {
+    "class_type": "VAEDecode",
+    "inputs": {
+      "samples": [
+        "110",
+        0
+      ],
+      "vae": [
+        "102",
+        0
+      ]
+    }
+  },
+  "112": {
+    "class_type": "VHS_VideoCombine",
+    "inputs": {
+      "images": [
+        "111",
+        0
+      ],
+      "frame_rate": 8,
+      "loop_count": 0,
+      "filename_prefix": "car_video",
+      "format": "video/h264-mp4",
+      "pingpong": false,
+      "save_output": true
+    }
+  },
+  "113": {
+    "class_type": "ImageScale",
+    "inputs": {
+      "image": [
+        "107",
+        0
+      ],
+      "upscale_method": "lanczos",
+      "width": 512,
+      "height": 344,
+      "crop": "disabled"
+    }
+  },
+  "114": {
+    "class_type": "LoadImage",
+    "inputs": {
+      "image": "line.png"
+    }
+  },
+  "115": {
+    "class_type": "ImageInvert",
+    "inputs": {
+      "image": [
+        "114",
+        0
+      ]
+    }
+  },
+  "116": {
+    "class_type": "ControlNetLoader",
+    "inputs": {
+      "control_net_name": "control_v11p_sd15_scribble_fp16.safetensors"
+    }
+  },
+  "117": {
+    "class_type": "ControlNetApplyAdvanced",
+    "inputs": {
+      "positive": [
+        "105",
+        0
+      ],
+      "negative": [
+        "106",
+        0
+      ],
+      "control_net": [
+        "116",
+        0
+      ],
+      "image": [
+        "115",
+        0
+      ],
+      "strength": 0.35,
+      "start_percent": 0.0,
+      "end_percent": 0.35
+    }
+  }
+}
