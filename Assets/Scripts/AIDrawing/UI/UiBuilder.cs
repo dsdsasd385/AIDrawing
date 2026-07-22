@@ -64,6 +64,50 @@ namespace CarDrawing.UI
             return text;
         }
 
+        // 팔레트용 원형·링 스프라이트 캐시. 앱 실행당 한 번만 만든다
+        private static Sprite _circleSprite;
+        private static Sprite _ringSprite;
+
+        /// <summary>
+        /// 매끄러운 원형 스프라이트 (팔레트 색 버튼용).
+        /// 씬의 기본 Knob(40×40)을 140px 셀에 3.5배 늘려 쓰면 외곽선이 계단처럼 깨진다 —
+        /// 안티에일리어싱을 넣어 큰 텍스처로 직접 만든다 (2026-07-14 실측 대응).
+        /// </summary>
+        public static Sprite CircleSprite => _circleSprite != null
+            ? _circleSprite
+            : _circleSprite = CreateRadialSprite(256, 0f);
+
+        /// <summary>선택 표시용 링(도넛) 스프라이트. 현재 고른 색 버튼 위에 겹쳐 보여 준다</summary>
+        public static Sprite RingSprite => _ringSprite != null
+            ? _ringSprite
+            : _ringSprite = CreateRadialSprite(256, 0.80f);
+
+        // innerRatio = 0이면 꽉 찬 원, >0이면 그 비율 안쪽이 비는 링.
+        // 가장자리 1px 구간을 알파로 보간해 계단을 없앤다 (텍스처가 커도 확대 시 부드럽게 남는다)
+        private static Sprite CreateRadialSprite(int size, float innerRatio)
+        {
+            var tex = new Texture2D(size, size, TextureFormat.RGBA32, false) { filterMode = FilterMode.Bilinear };
+            var pixels = new Color32[size * size];
+            float center = (size - 1) * 0.5f;
+            float outer = center;          // 바깥 반지름
+            float inner = outer * innerRatio;
+            const float edge = 1.5f;       // 알파가 0→1로 넘어가는 폭(px)
+
+            for (int y = 0; y < size; y++)
+            {
+                for (int x = 0; x < size; x++)
+                {
+                    float d = Mathf.Sqrt((x - center) * (x - center) + (y - center) * (y - center));
+                    float a = Mathf.Clamp01((outer - d) / edge);                       // 바깥 경계
+                    if (inner > 0f) a = Mathf.Min(a, Mathf.Clamp01((d - inner) / edge)); // 안쪽 경계(링)
+                    pixels[y * size + x] = new Color32(255, 255, 255, (byte)(a * 255f));
+                }
+            }
+            tex.SetPixels32(pixels);
+            tex.Apply();
+            return Sprite.Create(tex, new Rect(0, 0, size, size), new Vector2(0.5f, 0.5f));
+        }
+
         /// <summary>
         /// 배경색 + 라벨 텍스트를 가진 버튼을 생성한다.
         /// 레이아웃 그룹 아래에 두거나, 아니라면 Place()로 위치를 지정한다.

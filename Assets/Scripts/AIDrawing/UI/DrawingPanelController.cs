@@ -54,6 +54,8 @@ namespace CarDrawing.UI
         private Image _eraserButtonImage;
         // 방치 팝업 루트 (첫 표시 시점에 생성)
         private GameObject _idlePopup;
+        // 팔레트 각 버튼 위에 겹쳐 둔 선택 표시 링 (지금 고른 색 하나만 켠다)
+        private readonly Image[] _paletteRings = new Image[Palette.Length];
 
         private void Start()
         {
@@ -62,6 +64,7 @@ namespace CarDrawing.UI
 
             BuildPalette();
             BuildToolbar();
+            SetColor(Palette[0]); // 시작 색(검정)을 캔버스·표시에 함께 반영
         }
 
         /// <summary>브러시 색을 바꾸고 지우개 모드를 해제한다 (색을 고르면 그리기 의도로 간주).</summary>
@@ -69,7 +72,28 @@ namespace CarDrawing.UI
         {
             canvas.BrushColor = color;
             SetEraser(false);
+            HighlightSelected(color);
         }
+
+        // 지금 고른 색 버튼에만 링을 켠다. 어두운 색 위에는 흰 링, 밝은 색 위에는 검은 링을 써서
+        // 어떤 색에서도 선택 표시가 보이게 한다
+        private void HighlightSelected(Color color)
+        {
+            for (int i = 0; i < _paletteRings.Length; i++)
+            {
+                if (_paletteRings[i] == null) continue;
+                bool selected = ApproximatelyEqual(Palette[i], color);
+                _paletteRings[i].enabled = selected;
+                if (selected)
+                {
+                    float luminance = 0.299f * color.r + 0.587f * color.g + 0.114f * color.b;
+                    _paletteRings[i].color = luminance > 0.6f ? new Color(0.15f, 0.17f, 0.25f) : Color.white;
+                }
+            }
+        }
+
+        private static bool ApproximatelyEqual(Color a, Color b) =>
+            Mathf.Abs(a.r - b.r) < 0.01f && Mathf.Abs(a.g - b.g) < 0.01f && Mathf.Abs(a.b - b.b) < 0.01f;
 
         /// <summary>펜 굵기를 설정하고 지우개 모드를 끈다.</summary>
         public void SetPenSize(float radius)
@@ -123,15 +147,34 @@ namespace CarDrawing.UI
 
         private void BuildPalette()
         {
-            int index = 0;
-            foreach (Color color in Palette)
+            // 씬에 배치해 둔 버튼을 계층 순서대로 팔레트 색에 대응시킨다.
+            // 버튼 수가 색 수와 달라도 죽지 않게 둘 중 작은 쪽까지만 처리한다 (전시장 무인 운영)
+            Button[] buttons = paletteContainer.GetComponentsInChildren<Button>(true);
+            if (buttons.Length != Palette.Length)
+                LogManager.Warn($"[DrawingPanel] 팔레트 버튼 {buttons.Length}개 / 색 {Palette.Length}개 — 개수가 다름");
+
+            int count = Mathf.Min(buttons.Length, Palette.Length);
+            for (int i = 0; i < count; i++)
             {
-                // Button button = UiBuilder.CreateButton(paletteContainer, "", color);
-                Button button = paletteContainer.GetComponentsInChildren<Button>()[index];
+                Button button = buttons[i];
+                Color color = Palette[i];
+
+                // 씬의 기본 Knob 스프라이트는 40×40이라 140px 셀로 늘리면 외곽선이 깨진다 —
+                // 런타임 생성한 256px 원형(안티에일리어싱)으로 교체한다 (2026-07-14)
+                button.image.sprite = UiBuilder.CircleSprite;
+                button.image.type = Image.Type.Simple;
                 button.image.color = color;
+
+                // 선택 표시 링 (버튼과 같은 크기로 겹쳐 두고 평소엔 꺼 둔다)
+                Image ring = UiBuilder.CreateImage(button.transform, "SelectionRing", Color.white);
+                ring.sprite = UiBuilder.RingSprite;
+                ring.raycastTarget = false; // 링이 클릭을 가로채면 색 선택이 안 된다
+                UiBuilder.Stretch((RectTransform)ring.transform);
+                ring.enabled = false;
+                _paletteRings[i] = ring;
+
                 Color captured = color; // 클로저에 루프 변수 직접 캡처 방지
                 button.onClick.AddListener(() => SetColor(captured));
-                index++;
             }
         }
 

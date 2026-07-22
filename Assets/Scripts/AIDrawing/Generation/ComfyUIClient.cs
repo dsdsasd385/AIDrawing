@@ -110,6 +110,32 @@ namespace CarDrawing.Generation
             _warmingUp = false;
         }
 
+        /// <summary>
+        /// 관리자 모드 테스트 생성 (계획서 11장). 더미 스케치로 실제 파이프라인을 한 번 태워
+        /// 서버·모델·워크플로가 모두 정상인지 확인한다. 결과 이미지는 버린다.
+        /// </summary>
+        /// <param name="onDone">(성공 여부, 사람이 읽을 결과 한 줄)</param>
+        public void TestGenerate(Action<bool, string> onDone)
+        {
+            byte[] dummy = MakeDummyPng();
+            float startedAt = Time.unscaledTime;
+            StylePreset style = StyleLibrary.Styles[0]; // 기본(실사) — 워크플로 내장 체크포인트
+            Generate("admintest", dummy, dummy, style,
+                _ => onDone?.Invoke(true, $"테스트 생성 성공 ({Time.unscaledTime - startedAt:F1}초)"),
+                reason => onDone?.Invoke(false, $"테스트 생성 실패: {reason}"));
+        }
+
+        /// <summary>
+        /// 서버가 재시작된 뒤 다시 예열한다 (워치독이 복구를 감지했을 때, 계획서 12장).
+        /// 새로 뜬 프로세스는 모델이 안 올라와 있어 첫 관람객이 콜드 로드를 만난다 — 그 전에 다시 태운다.
+        /// </summary>
+        public void Rewarm()
+        {
+            if (_warmingUp) return; // 이미 예열 중이면 그대로 두고 결과를 기다린다
+            _warmedUp = false;
+            Warmup();
+        }
+
         // 워밍업용 더미 PNG(흰 배경 + 가운데 검은 사각형). 파이프라인을 실제로 태워 모델을 적재하는 게 목적
         private static byte[] MakeDummyPng()
         {

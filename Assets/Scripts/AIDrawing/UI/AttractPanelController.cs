@@ -27,6 +27,10 @@ namespace CarDrawing.UI
         private Texture2D _slideTexture; // 재사용 텍스처 (장시간 무인 운영의 메모리 누수 방지)
         private int _slideIndex = -1;
 
+        // 서버 무응답 안내 (계획서 12장 워치독). 평소에는 숨어 있다
+        private Text _notice;
+        private string _pendingNotice; // Awake 전에 SetNotice가 불릴 수 있어 캐시한다 (ResultPanel과 같은 패턴)
+
         private void Awake()
         {
             UiBuilder.Stretch((RectTransform)transform);
@@ -63,7 +67,32 @@ namespace CarDrawing.UI
                 TextLibrary.Get("attract.start"), 48, new Color(1f, 0.85f, 0.30f));
             UiBuilder.Place((RectTransform)_startHint.transform, new Vector2(0, -420), new Vector2(1200, 80));
 
+            // 서버 무응답 안내 (시작 안내 문구 자리를 대신 차지한다 — 관람객이 클릭해도 시작되지 않으므로)
+            _notice = UiBuilder.CreateText(background.transform, "ServerNotice", "", 40, new Color(1f, 0.55f, 0.45f));
+            UiBuilder.Place((RectTransform)_notice.transform, new Vector2(0, -330), new Vector2(1600, 90));
+
             _slideGroup.SetActive(false); // 갤러리에 작품이 생기면 코루틴이 켠다
+            ApplyNotice();
+        }
+
+        /// <summary>
+        /// 서버 무응답 안내를 켜고 끈다 (AppFlowManager가 워치독 상태 변화에 따라 호출, 계획서 12장).
+        /// </summary>
+        /// <param name="message">표시할 문구. null·빈 문자열이면 안내를 숨기고 시작 안내를 되살린다</param>
+        public void SetNotice(string message)
+        {
+            _pendingNotice = message;
+            ApplyNotice();
+        }
+
+        private void ApplyNotice()
+        {
+            if (_notice == null) return; // Awake 전 — 캐시만 남기고 Awake가 반영한다
+            bool show = !string.IsNullOrEmpty(_pendingNotice);
+            _notice.text = show ? _pendingNotice : "";
+            _notice.gameObject.SetActive(show);
+            // 서버가 죽은 동안 "클릭해 시작"은 거짓말이 된다 — 안내가 뜨면 감춘다
+            if (_startHint != null) _startHint.gameObject.SetActive(!show);
         }
 
         private void OnEnable()

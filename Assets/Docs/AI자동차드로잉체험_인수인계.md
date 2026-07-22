@@ -92,11 +92,16 @@ git clone --depth 1 https://github.com/Kosinkadink/ComfyUI-VideoHelperSuite.git
 ```
 Assets/Scripts/AIDrawing/
 ├── Drawing/      캔버스. DrawingCanvas가 핵심 (이중 RenderTexture)
-├── Generation/   ComfyUI 연동 (ComfyUIClient·StyleLibrary)
+├── Generation/   ComfyUI 연동 (ComfyUIClient·StyleLibrary·PixelArtFilter)
+│                 + 영상 생성(IVideoGenerator ← ComfyUIVideoGenerator)
+│                 + 워치독(ComfyUIWatchdog — 헬스체크·재시작·복구 시 재예열)
 ├── Results/      저장(SessionStore) + QR(QrEncoder·QrCodeView) + 업로드(IResultUploader — 기본 B2Uploader, 대안 GcsUploader) + 필터(ContentFilter)
 ├── Gallery/      Display 2 슬라이드쇼 (GallerySlideshow — Gallery 폴더 감시, 대기 화면 미니 슬라이드쇼와 목록 공유)
-├── Core/         AppFlowManager(상태머신)·ConfigManager·TextLibrary·LogManager·IdleWatcher
-└── UI/           패널 컨트롤러 5종 + UiBuilder(런타임 uGUI 공용 헬퍼)
+├── Core/         AppFlowManager(상태머신)·ConfigManager·TextLibrary·LogManager·IdleWatcher·KioskMode
+└── UI/           패널 컨트롤러 6종(Attract/Drawing/Style/Generating/Result/Admin) + UiBuilder(런타임 uGUI 공용 헬퍼)
+
+Assets/Scripts/Editor/
+└── ExhibitBuildPostProcessor.cs   빌드 후 Tools/*.bat·Config/*-key.json을 exe 옆에 복사 (§6)
 ```
 
 패널 전환은 `Core/AppFlowManager`가 GameObject 활성/비활성으로 제어한다.
@@ -175,7 +180,11 @@ Unity 클라이언트가 실행 시 치환하는(할) 필드 — **노드 ID를 
 | **"첫 이미지 안 나옴" — 원인 2개, 둘 다 대응 완료(2026-07-09)** | ①**콜드 모델 로딩**: 첫 생성은 모델 적재로 실측 31.66초, 클라 타임아웃 30초라 첫 관람객만 사과 화면. ②**폴링 캐싱**: 첫 생성 때 `/history/{id}` 반복 GET에서 "아직 없음" 응답이 캐시돼 완료 후에도 갱신 안 됨 → 서버는 8~10초에 끝났는데 클라가 45초 타임아웃(콜드 재시작 실측 재현). **대응**: (a) `ComfyUIClient.Warmup()` — 앱 시작 시 더미 생성 1회로 모델 예열(AppFlowManager.Start에서 호출, 서버 늦게 뜨면 3회 재시도), (b) PollHistory URL에 캐시버스터(`?t=ticks`)+`Cache-Control: no-cache`, (c) `generateTimeoutSeconds` 30→45. 실측: 콜드 재시작 후 워밍업이 첫 시도에 완료, 이어 실제 생성이 Result까지 정상 도달 |
 | **RenderTexture는 플레이 모드에서 생성** | DrawingCanvas.Awake에서 만들므로 에디트 모드에서 캔버스가 비어 보이는 건 정상 |
 | **PS 5.1에서 JSON 만들 때** | `Out-File`은 BOM을 붙여 unity-mcp-cli가 거부. `[System.IO.File]::WriteAllText` 사용, 문자열은 `[string]` 캐스팅 |
-| **씬 빌드 인덱스** | `AI자동차드로잉체험.unity`가 Build Settings에 아직 없음. 빌드 전 등록 필요 |
+| **씬 빌드 인덱스** | ~~미등록~~ **해소(2026-07-14)**: `AI자동차드로잉체험.unity`가 Build Settings **index 0**에 등록됨. 이전 프로젝트 씬(`BlockCoding.unity`)은 남아 있지만 체크 해제 상태 — 다시 켜지 말 것(배포물만 커진다) |
+| **빌드는 Tools·Config를 exe 옆에 요구한다 (후처리가 자동 복사)** | 워치독 재시작 스크립트(`watchdog.restartCommand`)와 스토리지 키(`b2.keyFilePath`)는 **exe 기준 상대 경로**로 읽는다. StreamingAssets에는 못 넣으므로(배치 파일·키 노출) `Assets/Scripts/Editor/ExhibitBuildPostProcessor.cs`가 빌드 후 `Tools/*.bat`·`Config/*-key.json`을 exe 옆에 복사한다. **이게 없으면 빌드에서 QR과 자동 재시작이 조용히 꺼진다**(예외 없이 기능만 사라져 눈치채기 어렵다). `Config/`는 `*-key.json`만 복사한다 — 같은 폴더에 이전 프로젝트(지구환경코딩)의 `Config.json`이 있어 전체를 긁으면 배포물에 섞인다 |
+| **관리자 PIN은 평문** | `admin.password`(PIN)는 StreamingAssets/Data/Config.json에 평문으로 들어가 배포물에서 열람 가능하다. 키오스크(관람객이 파일 접근 불가) 전제로 수용한 것이며, 전시 PC 배포 전 기본값 `1234`를 **반드시 바꿀 것** |
+| **캔버스 스케일러는 Expand 유지 (match=0으로 되돌리지 말 것)** | 모든 UI가 1920×1080 설계 좌표에 고정 배치라, 가로 기준(match=0)이면 **16:9보다 가로로 넓은 화면에서 세로가 잘린다**(21:9에서 세로 가시 ±405인데 UI는 ±540까지 씀 — 하단 버튼·QR 소실). 두 캔버스(KioskCanvas·GalleryCanvas) 모두 `ScaleWithScreenSize + ref 1920×1080 + **Expand**`로 두면 어떤 비율에서도 설계 영역 전체가 보인다(남는 공간은 패널 배경이 채움). 전 패널 실측으로 넘침 0 확인(2026-07-14, 현황 §1) |
+| **키오스크에는 키보드가 없다 — UI 입력은 전부 화면 안에서 끝나야 함** | 관리자 잠금을 텍스트 `InputField`로 만들었다가 플레이에서 **아무것도 입력할 수 없음**을 확인(2026-07-14). 그래서 진입은 **구석 10연타 제스처**, 인증은 **온스크린 숫자 키패드 PIN**으로 바꿨다. 앞으로 어떤 화면을 추가하든 키보드·단축키를 전제한 입력은 넣지 말 것 (개발용 단축키는 병행 가능) |
 | **도구 버튼은 런타임 생성** | DrawingPanelController가 팔레트·버튼을 코드로 만든다. 씬에서 버튼이 안 보여도 정상. 디자인 리소스가 나오면 프리팹 방식으로 교체 예정 |
 | **패널 UI도 런타임 생성** | Attract/Style/Generating/Result 패널의 배경·텍스트·버튼은 각 컨트롤러 Awake에서 생성. 씬의 패널 오브젝트는 비어 보이는 게 정상. 버튼 GameObject 이름 = Texts.json 라벨 문구라서 문구를 바꾸면 `GameObject.Find` 경로도 바뀐다 (테스트 스크립트 주의) |
 | **콜드 부팅 첫 생성은 30초 초과** | 서버 프로세스를 막 띄운 직후의 첫 생성은 모델 디스크 로딩 포함 30초 타임아웃을 넘겨 실패할 수 있다 (실측). ⑤의 워밍업 생성이 필수인 이유. 개발 중엔 실패 후 한 번 더 시도하면 됨 |
@@ -197,12 +206,14 @@ Unity 클라이언트가 실행 시 치환하는(할) 필드 — **노드 ID를 
 | **영상 움직임은 카메라 모션 LoRA에서 나온다 (프롬프트·denoise 아님)** | "바퀴만 움직이고 티가 안 난다"의 실제 해법. 프롬프트(과격한 액션 서술)·motion_scale·denoise 상향 모두 움직임을 거의 못 만든다(2026-07-13 프레임 실측: 현재안 모션지표 1.6, 정지 영상 수준). **AnimateDiff 카메라 모션 LoRA(`v2_lora_PanLeft` 강도 0.8)를 노드 120에 추가**하니 카메라가 차를 따라 팬해서 눈에 확 띔 — 화면 전체가 움직여 차 형태도 안 뭉개진다. 워크플로: 노드 120 `ADE_AnimateDiffLoRALoader` → 노드 104의 `motion_lora` 입력. 더 큰 움직임은 강도 0.8→1.0. denoise는 움직임이 아니라 원본 대비 표류(차 디자인 변형)만 키우므로 낮게(0.45~0.6) 유지 |
 | **영상·이미지 워크플로는 노드 ID를 겹치면 안 됨** | 두 워크플로가 같은 노드 ID(예: 체크포인트 "1")를 쓰면 ComfyUI 프롬프트 간 캐시가 공유돼 AnimateDiff 실행 후 이미지 생성이 노이즈로 붕괴한다 (2026-07-13 실측). **영상 워크플로는 노드 ID 101번대 사용** — 분리 후 이미지↔영상 4연속 교대 실행 안정 확인. 영상 워크플로를 수정할 때 ID를 1~13번대로 되돌리지 말 것 |
 | **ComfyUI Desktop 앱은 불필요** | 설치본은 git+venv 방식(`C:\Users\HULIAC\ComfyUI`)이며 Desktop 앱과 무관. "서버가 안 뜬다"면 Desktop 설치가 아니라 ①`comfyui_run.log` 확인 ②`venv\Scripts\python.exe main.py --listen 127.0.0.1 --port 8188` 직접 실행으로 진단 |
+| **워치독이 개발 중에도 서버를 되살린다** | `watchdog.enabled=true`(기본)면 서버를 일부러 끄고 플레이해도 30초 뒤 워치독이 `run_comfyui.bat`을 실행해 다시 띄운다. 생성 실패 경로(사과 문구)를 테스트하려면 Config.json에서 워치독을 꺼야 한다. 재시작 쿨다운 180초는 **기동 중(~90초)인 서버를 계속 다시 띄우는 폭주를 막는 값** — 줄이지 말 것 |
 
 ---
 
-# 7. 외부 계정 / 보안 (코드 준비 완료 — 계정·모델만 미개통)
+# 7. 외부 계정 / 보안 (B2는 개통 완료 — VLM 모델만 미선정)
 
-- **Backblaze B2 (QR 업로드, 기본)**: 계정 **아직 미생성** — 카드 등록 없이 가입 가능(10GB 영구 무료). 코드(`B2Uploader`)는 완성돼 있어 아래만 하면 QR이 켜진다:
+- **Backblaze B2 (QR 업로드, 기본)**: **개통 완료 (2026-07-10)** — 버킷 `Practice01`(비공개), 버킷 제한 키 발급, `Config\b2-key.json` 배치, CLI 종단 검증(인증→PNG 업로드→다운로드 토큰→HTML→다운로드 전부 HTTP 200)까지 통과. 결과 화면 QR 표시·폰 스캔 실검증만 남았다.
+  아래는 **전시 PC 이전·키 재발급 시 재현 절차**다 (카드 등록 없이 10GB 영구 무료):
   1. [backblaze.com](https://www.backblaze.com/sign-up/cloud-storage) 가입 (카드 불필요)
   2. 버킷 생성, **Files are: Private 유지** — ⚠ Public을 고르면 카드 등록을 요구한다(B2 정책, 2026-07-10 실측).
      비공개 버킷이어도 QR 링크는 클라이언트가 만료형 다운로드 토큰(`b2_get_download_authorization`)을 붙여 만들므로 폰에서 그대로 열린다. **링크 유효 기간 7일**(B2 최대치, Config `b2.downloadAuthSeconds`)
@@ -215,20 +226,51 @@ Unity 클라이언트가 실행 시 치환하는(할) 필드 — **노드 ID를 
   5. Config.json은 기본값 그대로 동작. 카드 등록 후 공개 버킷으로 바꾸면 `downloadAuthSeconds: 0`으로 토큰 없는 영구 링크가 된다
 - **GCS (QR 업로드, 대안)**: `GcsUploader`로 구현 유지. B2 키가 없고 GCS 설정(버킷명+`Config/gcs-key.json`)이 있으면 자동으로 GCS를 쓴다. 절차: 공개 버킷 + objectCreator 전용 서비스 계정 키 + `gcs.bucketName` 기입. 결제 수단 등록 필요
 - **VLM 필터 모델**: 미선정. 코드(`ContentFilter`)는 OpenAI 호환 chat completions 호출로 완성 — Ollama 설치 후 Moondream2 / Qwen2-VL-2B급을 비교(차량 판정 정확도·CPU 소요)해 `filter.model` 확정, `filter.enabled=true`로 전환. 필터가 꺼져 있으면 opt-in 작품이 곧장 갤러리로 간다. **운영 결정 보류 중** — 상주 인력이 있으면 관리자 모드 사후 관리로 대체 가능 (2026-07-10 논의)
+- **관리자 모드 접근 (2026-07-14)**: 어느 화면에서든 **화면 좌측 하단 구석을 3초 안에 10번 터치** → 온스크린 숫자 키패드에 **PIN**(기본 `1234`, Config.json `admin.password`) → 관리자 패널. 키보드가 있는 개발 환경에서는 Ctrl+Shift+F12도 같은 화면을 연다. 구석 크기·연타 수·인정 시간은 `admin.cornerSize`/`cornerTapCount`/`cornerTapSeconds`. **전시 PC 배포 전 PIN을 반드시 변경할 것**
+
+---
+
+# 7-1. 전시 PC 배포 / 자동 시작 (2026-07-14)
+
+**배포물 구성** — Unity 빌드 후 `Build/` 폴더가 그대로 배포물이다. 빌드 후처리(`ExhibitBuildPostProcessor`)가 아래 두 폴더를 자동으로 넣어 준다:
+
+```
+Build\
+├── CarDrawing.exe            ← 앱
+├── CarDrawing_Data\StreamingAssets\   ← 워크플로·Data(JSON)·StyleExamples (빌드에 포함)
+├── Tools\run_comfyui.bat     ← 워치독이 재시작에 쓰는 스크립트
+├── Tools\start_exhibit.bat   ← 부팅 자동 시작 (ComfyUI → 헬스 대기 → 앱)
+└── Config\b2-key.json        ← QR 업로드 키 (없으면 QR만 자동 숨김)
+```
+
+**자동 시작 등록 (작업 스케줄러)** — `Tools\start_exhibit.bat`이 ComfyUI를 띄우고 `/system_stats`가 200을 줄 때까지(최대 180초) 기다린 뒤 앱을 실행한다. 서버가 안 떠도 앱은 띄운다(안내 화면 + 워치독 재시도 — 검은 화면이 더 나쁘다). 로그는 `Tools\start_exhibit.log`.
+
+1. 작업 스케줄러 → 작업 만들기 → **트리거: 로그온할 때**
+2. 동작: 프로그램 시작 → `<배포 폴더>\Tools\start_exhibit.bat`
+3. 조건 탭에서 "컴퓨터를 AC 전원으로 사용할 때만 시작" **해제**
+4. 설정 탭에서 "작업이 실패하면 다시 시작" 체크(1분 간격, 3회)
+
+※ ComfyUI 경로는 `run_comfyui.bat` 안에 하드코딩(`C:\Users\HULIAC\ComfyUI`)돼 있다. 전시 PC 경로가 다르면 이 줄을 고칠 것 (파일은 **ASCII 전용** 유지 — §6 함정).
 
 ---
 
 # 8. 미결 사항 체크리스트
 
 - [x] ~~마일스톤 ④ 코드·씬 구성~~ (2026-07-10 완료 — 플레이 검증·계정 개통만 남음, 작업현황 §3)
-- [ ] 마일스톤 ④ 플레이 검증 + ⑤ (작업현황 문서의 "다음 작업" 참조)
+- [x] ~~Backblaze B2 계정·버킷·키 생성~~ (2026-07-10 완료 — 7장. GCS는 대안으로 강등)
+- [ ] **QR 실검증** — 결과 화면 QR 표시 → 폰 스캔 → 랜딩 페이지 저장 (④ 마무리 항목, 남은 유일한 ④ 잔여)
+- [x] ~~마일스톤 ⑤ 코드·씬·빌드~~ (2026-07-14 — 워치독·키오스크·관리자 모드·자동 시작 스크립트·빌드 후처리. 실행 검증만 남음)
+- [ ] **마일스톤 ⑤ 실행 검증** — 관리자 진입, 워치독(서버 끄고 재시작 확인), 빌드 실행(키오스크·QR·Display 2), `start_exhibit.bat` 단독 실행 (작업현황 §3)
+- [ ] 전시 PC에 작업 스케줄러 등록 (§7-1) + `admin.password` 변경
 - [ ] 이전 프로젝트 삭제분 clean slate 커밋 정리
-- [ ] Backblaze B2 계정·버킷·키 생성 (7장 절차대로 — 코드는 준비됨. GCS는 대안으로 강등)
 - [ ] VLM 필터 — 운영 형태 확정 시 결정 (7장 — 코드는 준비됨, 기본 filter.enabled=false, 보류 중)
-- [x] ~~스타일 프리셋 3~4종 확정~~ (2026-07-10 — 4종 프롬프트·denoise 확정 → 2026-07-13 카툰 전용 체크포인트·픽셀 그리드 스냅으로 재확정, 작업현황 §1)
-- [ ] 카툰(ToonYou)·픽셀(PixelArtRedmond LoRA) 개편 플레이 검증 (이미지+영상) + 예시 썸네일(StyleExamples/cartoon.png·pixelart.png) 새 결과물로 교체
-- [ ] 카툰 이미지 → 영상 스타일 불일치 (영상 워크플로는 RV 고정이라 카툰 결과가 실사풍으로 되칠해짐) — 스타일별 영상 프롬프트/체크포인트 연동 여부 결정
-- [ ] 관리자 모드 진입 키 조합·비밀번호 확정 (계획서 11장, 예시: Ctrl+Shift+F12)
-- [ ] Build Settings에 씬 등록 + Windows 빌드 검증
+- [x] ~~스타일 프리셋 3~4종 확정~~ (2026-07-10 — 4종 프롬프트·denoise 확정 → 2026-07-13 카툰 전용 체크포인트·픽셀 LoRA로 재확정, 작업현황 §1)
+- [x] ~~카툰(ToonYou)·픽셀(PixelArtRedmond LoRA) 개편 플레이 검증~~ (2026-07-14 완료 — 이미지·영상 모두 스타일 유지 확인)
+- [ ] 예시 썸네일(`StyleExamples/cartoon.png`·`pixelart.png`)을 개편 후 결과물로 교체
+- [x] ~~카툰 이미지 → 영상 스타일 불일치 우려~~ (2026-07-13 실측: img2vid가 입력 스타일을 보존해 **문제 없음**. 단 평평한 면이라 카메라 팬 체감이 약함 — 수용)
+- [x] ~~관리자 모드 진입 방식·비밀번호 확정~~ (2026-07-14 — 구석 10연타 + 키패드 PIN, 개발용 Ctrl+Shift+F12 병행. §7)
+- [ ] 전시 PC(터치 스크린)에서 **구석 10연타 제스처 실입력 검증** — MCP로는 마우스 입력을 흉내 낼 수 없어 미검증
+- [x] ~~Build Settings에 씬 등록 + Windows 빌드~~ (2026-07-14 — index 0 등록, 빌드 Succeeded 에러 0. **실행 검증은 위 항목**)
 - [ ] 전시장 PC 사양·인터넷 회선 확정 시 재검토 (현재는 개발 PC = 전시 PC 가정)
-- [ ] 마일스톤 ⑥ 결과 영상화 — ~~AnimateDiff PoC~~ → ~~Unity 코드·씬 구성~~ (2026-07-13 완료) → **플레이 검증 + 모션 튜닝 + B2 영상 업로드·갤러리 영상 결정** (작업현황 §3). 외부 API 전환 시 회선·건당 과금(~$0.25) 확정 필요
+- [x] ~~마일스톤 ⑥ 결과 영상화~~ (2026-07-14 완료 — PoC → Unity 코드·씬 → 플레이 검증 4스타일. 모션은 PanLeft LoRA 0.8 + denoise 0.6에서 "봐줄 만한 수준"으로 종료)
+- [ ] 영상 후속 결정 — B2 업로드에 mp4 포함(QR 랜딩 video 태그)·갤러리 슬라이드쇼 영상 재생 여부. 외부 API 전환 시 회선·건당 과금(~$0.25) 확정 필요

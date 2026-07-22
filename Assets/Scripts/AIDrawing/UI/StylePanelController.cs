@@ -24,6 +24,8 @@ namespace CarDrawing.UI
     {
         /// <summary>관람객이 스타일을 선택했을 때 (선택 즉시 생성 시작)</summary>
         public event Action<StylePreset> StyleChosen;
+        /// <summary>[다시 그리기]로 그리기 화면에 돌아갈 때 (그림은 유지된다)</summary>
+        public event Action BackRequested;
 
         /// <summary>스타일 슬롯(VerticalGroup)들. Styles.json 순서대로 인스펙터에서 연결한다.
         /// 슬롯 수보다 스타일이 적으면 남는 슬롯은 자동으로 숨긴다 (v1 실사 1종 → 나머지 비표시)</summary>
@@ -41,10 +43,26 @@ namespace CarDrawing.UI
         // 바인딩은 Awake가 아니라 Start에서 한다. StylePanel은 비활성으로 시작하므로
         // 첫 활성화 시 Awake→Start 순서로 실행되는데, TMP 텍스트는 그 컴포넌트의 Awake가 끝난 뒤(=Start 시점)
         // 설정해야 값이 유지된다 (Awake에서 넣으면 TMP 초기화가 직렬화값 "선택"으로 덮어씀).
+        // 런타임 생성한 [다시 그리기] 버튼. 씬 UI는 TMP지만 이 버튼은 다른 패널과 같은 UiBuilder(레거시 Text)로 만든다
+        private Button _backButton;
+
         private void Start()
         {
             if (title != null) title.text = TextLibrary.Get("style.title");
             BindStyleGroups();
+            BuildBackButton();
+        }
+
+        // 스타일 화면에서 그리기로 되돌아가는 길 (2026-07-14 추가).
+        // 이게 없으면 [완성!]을 누른 순간 그림을 고칠 방법이 사라진다 — 관람객이 실수로 눌렀을 때 갇힌다
+        private void BuildBackButton()
+        {
+            if (_backButton != null) return; // Start는 활성화마다가 아니라 1회만 돌지만 방어
+            _backButton = UiBuilder.CreateButton(transform,
+                TextLibrary.Get("style.back"), new Color(0.55f, 0.57f, 0.62f), 32);
+            // 우측 상단 — 생성 화면의 같은 버튼과 위치를 맞춘다 (관람객이 한 자리에서 찾게)
+            UiBuilder.Place((RectTransform)_backButton.transform, new Vector2(790, 460), new Vector2(300, 88));
+            _backButton.onClick.AddListener(() => BackRequested?.Invoke());
         }
 
         /// <summary>

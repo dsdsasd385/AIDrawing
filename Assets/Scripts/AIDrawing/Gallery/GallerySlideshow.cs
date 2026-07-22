@@ -86,17 +86,19 @@ namespace CarDrawing.Gallery
                 TextLibrary.Get("gallery.title"), 64, Color.white);
             UiBuilder.Place((RectTransform)title.transform, new Vector2(0, 470), new Vector2(1600, 90));
 
-            // 흰 프레임 + 작품 이미지. 768×512(3:2) 원본과 같은 비율로 잡아 왜곡을 피한다
+            // 흰 프레임 + 작품 이미지. 768×512(3:2) 원본과 같은 비율로 잡아 왜곡을 피한다.
+            // 세로 구획: 제목이 y 425~515를 쓰므로 프레임 상단은 400을 넘지 않는다 —
+            // 예전 값(중심 -40 / 980 높이)은 상단이 450이라 제목과 25px 겹쳤다 (2026-07-14 실측)
             Image frame = UiBuilder.CreateImage(background.transform, "Frame", Color.white);
-            UiBuilder.Place((RectTransform)frame.transform, new Vector2(0, -40), new Vector2(1460, 980));
+            UiBuilder.Place((RectTransform)frame.transform, new Vector2(0, -60), new Vector2(1370, 920));
             _imageFrame = frame.gameObject;
 
             _image = UiBuilder.CreateRawImage(frame.transform, "Artwork");
-            UiBuilder.Place((RectTransform)_image.transform, Vector2.zero, new Vector2(1440, 960));
+            UiBuilder.Place((RectTransform)_image.transform, Vector2.zero, new Vector2(1350, 900));
 
             _emptyText = UiBuilder.CreateText(background.transform, "EmptyText",
                 TextLibrary.Get("gallery.empty"), 48, new Color(0.6f, 0.65f, 0.75f));
-            UiBuilder.Place((RectTransform)_emptyText.transform, new Vector2(0, -40), new Vector2(1400, 200));
+            UiBuilder.Place((RectTransform)_emptyText.transform, new Vector2(0, -60), new Vector2(1400, 200));
 
             _imageFrame.SetActive(false);
         }

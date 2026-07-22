@@ -17,6 +17,7 @@
     "keyFilePath": "Config/b2-key.json",
     "objectPrefix": "cars/",
     "downloadAuthSeconds": 604800,
+    "uploadLandingPage": false,
     "landingTemplatePath": "Data/QrLanding.html",
     "uploadTimeoutSeconds": 15
   },
@@ -42,5 +43,20 @@
     "enabled": true,
     "workflowPath": "ComfyUI/car_video_workflow_api.json",
     "generateTimeoutSeconds": 120
+  },
+  "watchdog": {
+    "enabled": true,
+    "checkIntervalSeconds": 10,
+    "requestTimeoutSeconds": 5,
+    "failThreshold": 3,
+    "restartCommand": "Tools/run_comfyui.bat",
+    "restartCooldownSeconds": 180
+  },
+  "admin": {
+    "password": "1234",
+    "hotkey": "F12",
+    "cornerSize": 100,
+    "cornerTapCount": 10,
+    "cornerTapSeconds": 3
   }
 }

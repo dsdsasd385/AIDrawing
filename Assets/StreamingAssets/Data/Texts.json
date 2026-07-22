@@ -3,6 +3,7 @@
   "attract.subtitle": "내가 그린 자동차가 진짜 사진처럼!",
   "attract.start": "화면을 클릭해 시작하세요",
   "attract.gallery": "관람객 작품 갤러리",
+  "attract.serverDown": "잠시 준비 중이에요. 곧 다시 시작할 수 있어요!",
 
   "drawing.title": "자동차를 그려보세요!",
   "drawing.tool.penThin": "가는 펜",
@@ -16,12 +17,14 @@
   "drawing.idle.continue": "네, 계속 그릴래요!",
 
   "style.title": "어떤 스타일로 완성할까요?",
+  "style.back": "← 그림 고치기",
   "style.realistic": "실사",
   "style.cartoon": "카툰",
   "style.pixelart": "픽셀아트",
   "style.simplecolor": "클레이",
 
   "generating.message": "AI가 그림을 완성하고 있어요",
+  "generating.back": "← 그림 고치기",
   "generating.error": "죄송해요, 그림을 완성하지 못했어요.\n잠시 후 다시 도전해 주세요!",
 
   "result.title": "작품이 완성됐어요!",
@@ -34,5 +37,30 @@
   "result.galleryDone": "전시 신청 완료!",
 
   "gallery.title": "관람객 작품 갤러리",
-  "gallery.empty": "아직 전시된 작품이 없어요.\n첫 번째 주인공이 되어 주세요!"
+  "gallery.empty": "아직 전시된 작품이 없어요.\n첫 번째 주인공이 되어 주세요!",
+
+  "admin.title": "관리자 모드",
+  "admin.unlock": "확인",
+  "admin.backspace": "←",
+  "admin.close": "닫기",
+  "admin.wrongPassword": "PIN이 맞지 않습니다",
+  "admin.tab.gallery": "갤러리",
+  "admin.tab.quarantine": "격리",
+  "admin.listEmpty": "작품 없음",
+  "admin.delete": "삭제",
+  "admin.restore": "갤러리로 복원",
+  "admin.deleted": "삭제했습니다:",
+  "admin.restored": "갤러리로 복원했습니다:",
+  "admin.test": "테스트 생성",
+  "admin.testRunning": "테스트 생성 중… (모델 로딩 시 최대 90초)",
+  "admin.restart": "ComfyUI 재시작",
+  "admin.restarting": "ComfyUI 재시작을 요청했습니다 (기동까지 약 90초)",
+  "admin.reload": "설정 다시 읽기",
+  "admin.reloaded": "Config·Styles·Texts를 다시 읽었습니다",
+  "admin.openSessions": "세션 폴더 열기",
+  "admin.openLogs": "로그 폴더 열기",
+  "admin.wipe": "갤러리 초기화",
+  "admin.wipeConfirm": "한 번 더 누르면 삭제",
+  "admin.wipeWarn": "갤러리와 격리의 모든 작품을 지웁니다. 실행하려면 한 번 더 누르세요 (세션 기록은 유지)",
+  "admin.wiped": "갤러리·격리를 초기화했습니다"
 }

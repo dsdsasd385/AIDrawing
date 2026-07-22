@@ -66,8 +66,12 @@ namespace CarDrawing.Core
         /// <summary>QR 다운로드 링크 유효 시간(초). B2 공개 버킷은 카드 등록이 필요해서 비공개 버킷 +
         /// 만료형 다운로드 토큰으로 운영한다 (기본 604800 = 최대치 7일). 0이면 공개 버킷 가정(토큰 생략)</summary>
         public int downloadAuthSeconds = 604800;
+        /// <summary>랜딩 HTML을 함께 올릴지 (2026-07-14 기본 false).
+        /// HTML을 올려도 이미지가 그 안에 포함되는 게 아니라 **HTML·PNG 두 파일이 따로** 올라간다 —
+        /// 버킷에 파일이 두 배로 쌓이고 링크도 두 벌이 되므로, QR은 PNG를 직접 가리킨다</summary>
+        public bool uploadLandingPage = false;
         /// <summary>QR 랜딩 페이지(저장 버튼 포함) 템플릿의 StreamingAssets 기준 상대 경로.
-        /// 파일이 없으면 내장 최소 템플릿으로 폴백한다 (예외로 죽지 않기)</summary>
+        /// uploadLandingPage=true일 때만 쓰인다. 파일이 없으면 내장 최소 템플릿으로 폴백한다</summary>
         public string landingTemplatePath = "Data/QrLanding.html";
         /// <summary>요청 타임아웃(초). 초과 시 QR만 숨기고 체험은 계속</summary>
         public float uploadTimeoutSeconds = 15f;
@@ -109,6 +113,46 @@ namespace CarDrawing.Core
         public float generateTimeoutSeconds = 120f;
     }
 
+    /// <summary>ComfyUI 워치독 설정 (계획서 12장: 무응답 감지 → 생성 잠금 + 재시작 시도).
+    /// 서버가 죽어도 앱은 계속 살아 있어야 하므로, 잠금은 "새 체험 시작 차단"까지만 한다</summary>
+    [Serializable]
+    public class WatchdogConfig
+    {
+        /// <summary>워치독 사용 여부. 끄면 헬스체크·재시작을 하지 않는다 (개발 중 서버를 수동으로 껐다 켤 때)</summary>
+        public bool enabled = true;
+        /// <summary>헬스체크 주기(초)</summary>
+        public float checkIntervalSeconds = 10f;
+        /// <summary>헬스체크 요청 타임아웃(초). 로컬 서버라 짧게 잡는다</summary>
+        public float requestTimeoutSeconds = 5f;
+        /// <summary>연속 실패 몇 회부터 '무응답'으로 볼지. 일시적 부하로 한 번 늦는 것과 구분한다</summary>
+        public int failThreshold = 3;
+        /// <summary>재시작 스크립트 경로. 절대 경로 또는 exe 옆(에디터: 프로젝트 루트) 기준 상대 경로.
+        /// 비우면 재시작을 시도하지 않고 안내만 띄운다</summary>
+        public string restartCommand = "Tools/run_comfyui.bat";
+        /// <summary>재시작 시도 후 다음 시도까지 최소 간격(초). 기동에 ~90초가 걸리므로 그보다 넉넉히 잡는다 —
+        /// 짧으면 기동 중인 서버를 계속 다시 띄우는 재시작 폭주가 된다</summary>
+        public float restartCooldownSeconds = 180f;
+    }
+
+    /// <summary>관리자 모드 설정 (계획서 11장). 숨김 키 조합 또는 구석 연타로 진입한다.
+    /// 전시 키오스크에는 키보드가 없으므로 터치 진입(구석 연타)이 실질적인 주 경로다</summary>
+    [Serializable]
+    public class AdminConfig
+    {
+        /// <summary>진입 PIN. 키보드 없는 키오스크라 화면 키패드(숫자)로 입력받으므로 **숫자만** 쓴다.
+        /// 비우면 제스처만으로 곧장 들어간다 (전시장에서는 반드시 설정할 것)</summary>
+        public string password = "1234";
+        /// <summary>진입 키 조합의 주 키 (Ctrl+Shift+와 조합). 계획서 11장 예시 F12. 키보드가 있을 때만 쓰인다</summary>
+        public string hotkey = "F12";
+        /// <summary>터치 진입 감지 영역 한 변(화면 픽셀). 화면 좌측 하단 모서리 정사각형</summary>
+        public float cornerSize = 100f;
+        /// <summary>터치 진입에 필요한 연타 횟수</summary>
+        public int cornerTapCount = 10;
+        /// <summary>연타 인정 시간(초). 이 시간 안에 cornerTapCount번 눌러야 한다 —
+        /// 관람객이 우연히 채울 수 없고 운영자는 의도적으로 채울 수 있는 값</summary>
+        public float cornerTapSeconds = 3f;
+    }
+
     /// <summary>갤러리 슬라이드쇼 설정 (계획서 5장 Display 2)</summary>
     [Serializable]
     public class GalleryConfig
@@ -132,6 +176,8 @@ namespace CarDrawing.Core
         public FilterConfig filter = new FilterConfig();
         public GalleryConfig gallery = new GalleryConfig();
         public VideoConfig video = new VideoConfig();
+        public WatchdogConfig watchdog = new WatchdogConfig();
+        public AdminConfig admin = new AdminConfig();
     }
 
     /// <summary>

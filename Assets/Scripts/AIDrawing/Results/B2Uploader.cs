@@ -16,7 +16,8 @@ namespace CarDrawing.Results
     /// 버킷은 **비공개**로 운영한다 — B2는 공개 버킷에만 카드 등록을 요구하므로, QR 링크는
     /// b2_get_download_authorization의 만료형 토큰(기본 7일)을 붙여 만든다.
     /// 흐름: b2_authorize_account(키 파일) → b2_get_upload_url → PNG 업로드 → 다운로드 토큰 →
-    /// 저장 버튼이 있는 랜딩 HTML 업로드 → QR은 랜딩 페이지를 가리킨다 (같은 접두사라 토큰 1개로 커버).
+    /// **QR은 PNG를 직접 가리킨다** (2026-07-14). 랜딩 HTML은 `b2.uploadLandingPage=true`일 때만 추가로
+    /// 올린다 — HTML 안에 이미지가 담기는 게 아니라 파일이 둘로 늘어나기 때문에 기본은 끔.
     /// 키 파일이 없으면 IsConfigured=false로 QR 기능 전체가 조용히 꺼진다 (GcsUploader와 동일 계약).
     /// AppFlowManager가 B2 → GCS 순으로 설정된 업로더를 고른다.
     /// </summary>
@@ -225,19 +226,25 @@ namespace CarDrawing.Results
                         yield break;
                     }
                 }
-                // 이미지 주소는 랜딩 페이지와 같은 폴더라 상대 경로면 충분 (HTML을 짧게 유지)
                 string tokenQuery = authQuery == null ? "" : "?Authorization=" + authQuery;
-                string imageRelative = Path.GetFileName(pngName) + tokenQuery;
 
-                // 3) 저장 버튼이 있는 랜딩 HTML 업로드 (계획서 9-2). 실패하면 PNG 직링크로 폴백 — QR은 계속 산다
-                string landingHtml = LoadLandingTemplate(cfg).Replace("{{IMAGE_URL}}", imageRelative);
-                bool htmlUploaded = false;
-                yield return PutFile(cfg, uploadUrl, uploadToken, htmlName,
-                    Encoding.UTF8.GetBytes(landingHtml), "text/html; charset=utf-8", ok => htmlUploaded = ok);
+                // 3) 랜딩 HTML (선택). 기본은 **끔** — HTML을 올려도 이미지가 그 안에 담기는 게 아니라
+                //    HTML·PNG 두 파일이 따로 올라가는 구조라, 관리·용량·링크가 두 벌이 된다 (2026-07-14 결정).
+                //    QR은 PNG를 직접 가리키고, 폰에서는 이미지를 길게 눌러 저장한다
+                string qrTarget = pngName;
+                if (cfg.uploadLandingPage)
+                {
+                    // 이미지 주소는 랜딩 페이지와 같은 폴더라 상대 경로면 충분 (HTML을 짧게 유지)
+                    string imageRelative = Path.GetFileName(pngName) + tokenQuery;
+                    string landingHtml = LoadLandingTemplate(cfg).Replace("{{IMAGE_URL}}", imageRelative);
+                    bool htmlUploaded = false;
+                    yield return PutFile(cfg, uploadUrl, uploadToken, htmlName,
+                        Encoding.UTF8.GetBytes(landingHtml), "text/html; charset=utf-8", ok => htmlUploaded = ok);
+                    if (htmlUploaded) qrTarget = htmlName; // 실패하면 PNG 직링크로 폴백 — QR은 계속 산다
+                }
 
-                string qrTarget = htmlUploaded ? htmlName : pngName;
                 string qrUrl = $"{_downloadUrl}/file/{_bucketName}/{qrTarget}{tokenQuery}";
-                LogManager.Info($"[B2] 업로드 완료 ({(htmlUploaded ? "랜딩 페이지" : "PNG 직링크 폴백")}, 링크 유효 {cfg.downloadAuthSeconds}초): {qrUrl}");
+                LogManager.Info($"[B2] 업로드 완료 ({(qrTarget == pngName ? "PNG 직링크" : "랜딩 페이지")}, 링크 유효 {cfg.downloadAuthSeconds}초): {qrUrl}");
                 onDone?.Invoke(qrUrl);
                 yield break;
             }

@@ -1,3 +1,4 @@
+using System;
 using System.Collections;
 using CarDrawing.Drawing;
 using CarDrawing.Generation;
@@ -14,7 +15,8 @@ namespace CarDrawing.Core
         Drawing,    // 그리기
         Style,      // 스타일 선택
         Generating, // 생성 중
-        Result      // 결과 비교
+        Result,     // 결과 비교
+        Admin       // 관리자 모드 (계획서 11장 — 숨김 키 조합 진입, 시간 정책 적용 안 함)
     }
 
     /// <summary>
@@ -49,6 +51,10 @@ namespace CarDrawing.Core
         [SerializeField] private ContentFilter contentFilter;
         /// <summary>결과 영상 생성기 (마일스톤 ⑥) — 로컬 ComfyUI(AnimateDiff) 구현. 없거나 꺼져 있으면 이미지-only</summary>
         [SerializeField] private ComfyUIVideoGenerator videoGenerator;
+        /// <summary>관리자 패널 (계획서 11장). Ctrl+Shift+지정키로 진입</summary>
+        [SerializeField] private AdminPanelController adminPanel;
+        /// <summary>ComfyUI 워치독 (계획서 12장). 무응답이면 새 체험 시작을 막는다</summary>
+        [SerializeField] private ComfyUIWatchdog watchdog;
 
         private AppState _state;
         private string _sessionId;
@@ -61,6 +67,9 @@ namespace CarDrawing.Core
         private bool _videoInProgress;
         // 이번 세션에서 선택된 스타일. 결과 후처리(픽셀화)가 참조한다
         private StylePreset _chosenStyle;
+        // 관리자 터치 진입(구석 연타) 상태 — 키보드 없는 키오스크용
+        private int _cornerTapCount;
+        private float _cornerFirstTapAt;
         // 방치 팝업 상태 (그리기 화면 전용, 계획서 4장: 90초 팝업 + 30초 유예)
         private bool _idlePopupShown;
         private float _idlePopupShownAt;
@@ -74,8 +83,12 @@ namespace CarDrawing.Core
             drawingPanel.CompleteRequested += OnDrawingCompleted;
             drawingPanel.ContinueRequested += OnIdleContinue;
             stylePanel.StyleChosen += OnStyleChosen;
+            stylePanel.BackRequested += OnBackToDrawing;
+            generatingPanel.BackRequested += OnBackToDrawing;
             resultPanel.RetryRequested += OnRetryRequested;
             resultPanel.GalleryRequested += OnGalleryRequested;
+            if (adminPanel != null) adminPanel.CloseRequested += OnAdminClose;
+            if (watchdog != null) watchdog.HealthChanged += OnServerHealthChanged;
 
             EnterState(AppState.Attract);
 
@@ -92,12 +105,19 @@ namespace CarDrawing.Core
                 drawingPanel.CompleteRequested -= OnDrawingCompleted;
                 drawingPanel.ContinueRequested -= OnIdleContinue;
             }
-            if (stylePanel != null) stylePanel.StyleChosen -= OnStyleChosen;
+            if (stylePanel != null)
+            {
+                stylePanel.StyleChosen -= OnStyleChosen;
+                stylePanel.BackRequested -= OnBackToDrawing;
+            }
+            if (generatingPanel != null) generatingPanel.BackRequested -= OnBackToDrawing;
             if (resultPanel != null)
             {
                 resultPanel.RetryRequested -= OnRetryRequested;
                 resultPanel.GalleryRequested -= OnGalleryRequested;
             }
+            if (adminPanel != null) adminPanel.CloseRequested -= OnAdminClose;
+            if (watchdog != null) watchdog.HealthChanged -= OnServerHealthChanged;
 
             CleanupSession();
         }
@@ -118,10 +138,19 @@ namespace CarDrawing.Core
             if (gcsUploader == null) gcsUploader = FindObjectOfType<GcsUploader>(true);
             if (contentFilter == null) contentFilter = FindObjectOfType<ContentFilter>(true);
             if (videoGenerator == null) videoGenerator = FindObjectOfType<ComfyUIVideoGenerator>(true);
+            if (adminPanel == null) adminPanel = FindObjectOfType<AdminPanelController>(true);
+            if (watchdog == null) watchdog = FindObjectOfType<ComfyUIWatchdog>(true);
         }
 
         private void Update()
         {
+            if (IsAdminHotkeyPressed() || IsAdminCornerTapped())
+            {
+                // 관리자 모드는 어느 화면에서든 열린다. 닫으면 대기 화면으로 (진행 중이던 세션은 버린다)
+                if (_state != AppState.Admin) EnterState(AppState.Admin);
+                return;
+            }
+
             TimingConfig timing = ConfigManager.Config.timing;
             switch (_state)
             {
@@ -160,6 +189,57 @@ namespace CarDrawing.Core
             }
         }
 
+        // 관리자 모드 진입 키 조합 (계획서 11장: Ctrl+Shift+F12). 주 키는 Config.json에서 바꿀 수 있다.
+        // 관람객이 우연히 누를 수 없는 조합이어야 하므로 Ctrl·Shift 동시 입력을 요구한다
+        private bool IsAdminHotkeyPressed()
+        {
+            if (adminPanel == null) return false;
+            bool ctrl = Input.GetKey(KeyCode.LeftControl) || Input.GetKey(KeyCode.RightControl);
+            bool shift = Input.GetKey(KeyCode.LeftShift) || Input.GetKey(KeyCode.RightShift);
+            if (!ctrl || !shift) return false;
+
+            // 설정값이 오타여도 죽지 않는다 — 기본 F12로 폴백 (무인 운영)
+            if (!Enum.TryParse(ConfigManager.Config.admin.hotkey, true, out KeyCode key))
+                key = KeyCode.F12;
+            return Input.GetKeyDown(key);
+        }
+
+        // 터치 진입 (계획서 11장 보강, 2026-07-14): 전시 키오스크에는 키보드가 없다.
+        // 화면 좌측 하단 구석(기본 100×100px)을 정해진 시간 안에 연타(기본 3초 내 10회)하면 관리자 모드로 간다.
+        // 관람객이 우연히 채울 수 없는 조합이고(그리기 캔버스 밖 구석 + 연타), 운영자는 손가락만으로 들어올 수 있다.
+        // 화면 위 어떤 UI가 덮고 있든 동작한다 — Input 폴링이라 uGUI 레이캐스트와 무관하다
+        private bool IsAdminCornerTapped()
+        {
+            if (adminPanel == null || _state == AppState.Admin) return false;
+            if (!Input.GetMouseButtonDown(0)) return false;
+
+            AdminConfig cfg = ConfigManager.Config.admin;
+            float size = Mathf.Max(20f, cfg.cornerSize);
+            Vector3 p = Input.mousePosition;
+            if (p.x > size || p.y > size || p.x < 0f || p.y < 0f)
+            {
+                // 구석 밖을 누르면 연타가 끊긴 것으로 본다 (그리기 중 우연 누적 방지)
+                _cornerTapCount = 0;
+                return false;
+            }
+
+            float now = Time.unscaledTime;
+            // 첫 탭이거나 인정 시간이 지났으면 처음부터 다시 센다
+            if (_cornerTapCount == 0 || now - _cornerFirstTapAt > Mathf.Max(1f, cfg.cornerTapSeconds))
+            {
+                _cornerFirstTapAt = now;
+                _cornerTapCount = 1;
+                return false;
+            }
+
+            _cornerTapCount++;
+            if (_cornerTapCount < Mathf.Max(2, cfg.cornerTapCount)) return false;
+
+            _cornerTapCount = 0;
+            LogManager.Info("[AppFlow] 관리자 모드 진입 (구석 연타)");
+            return true;
+        }
+
         private void EnterState(AppState next)
         {
             _state = next;
@@ -171,17 +251,42 @@ namespace CarDrawing.Core
             stylePanel.gameObject.SetActive(next == AppState.Style);
             generatingPanel.gameObject.SetActive(next == AppState.Generating);
             resultPanel.gameObject.SetActive(next == AppState.Result);
+            if (adminPanel != null) adminPanel.gameObject.SetActive(next == AppState.Admin);
 
             switch (next)
             {
                 case AppState.Attract:
                     CleanupSession();
+                    // 서버가 죽어 있으면 대기 화면에 안내를 띄운 채로 둔다 (시작 클릭도 막힌다)
+                    UpdateAttractServerNotice();
                     break;
                 case AppState.Drawing:
                     _idlePopupShown = false;
                     drawingPanel.HideIdlePopup();
                     break;
+                case AppState.Admin:
+                    // 관리자 화면에서는 시간 정책을 적용하지 않는다 (운영자가 오래 머물 수 있다)
+                    CleanupSession();
+                    break;
             }
+        }
+
+        // ── 워치독 (계획서 12장) ──────────────────────────────
+
+        // 서버가 죽으면 새 체험 시작을 막고 대기 화면에 안내를 띄운다. 앱 자체는 계속 돈다.
+        // 진행 중이던 세션은 건드리지 않는다 — 생성 타임아웃이 알아서 사과 문구로 마무리한다
+        private void OnServerHealthChanged(bool healthy)
+        {
+            UpdateAttractServerNotice();
+            if (!healthy) LogManager.Warn("[AppFlow] ComfyUI 무응답 — 새 체험 시작을 잠급니다");
+            else LogManager.Info("[AppFlow] ComfyUI 복구 — 체험 시작 잠금 해제");
+        }
+
+        private void UpdateAttractServerNotice()
+        {
+            if (attractPanel == null) return;
+            bool down = watchdog != null && !watchdog.IsHealthy;
+            attractPanel.SetNotice(down ? TextLibrary.Get("attract.serverDown") : null);
         }
 
         // 세션 산출물 정리. CPU 텍스처는 명시적으로 파괴해야 메모리가 회수된다 (장시간 무인 운영 대비)
@@ -200,9 +305,35 @@ namespace CarDrawing.Core
         private void OnStartRequested()
         {
             if (_state != AppState.Attract) return;
+
+            // 서버가 죽어 있으면 시작을 막는다 (계획서 12장: 생성 기능 잠금 + 안내).
+            // 그리게 두고 마지막에 실패시키는 것보다, 그리기 전에 막는 편이 관람객에게 덜 억울하다
+            if (watchdog != null && !watchdog.IsHealthy)
+            {
+                UpdateAttractServerNotice();
+                return;
+            }
+
             // 새 관람객 — 이전 그림을 지우고 시작한다
             canvas.ClearAll();
             EnterState(AppState.Drawing);
+        }
+
+        // 스타일·생성 화면에서 [다시 그리기] — 그림을 유지한 채 그리기 화면으로 되돌린다 (2026-07-14).
+        // 생성 중에 눌렀다면 요청은 서버에서 계속 돌지만, 늦게 도착한 결과는
+        // OnGenerationSucceeded/Failed의 상태 가드(_state == Generating)가 버린다.
+        // 세션 ID는 그대로 두어 이후 [완성!]에서 새로 발급된다
+        private void OnBackToDrawing()
+        {
+            if (_state != AppState.Style && _state != AppState.Generating) return;
+            EnterState(AppState.Drawing);
+        }
+
+        // 관리자 모드 종료 — 대기 화면으로 복귀 (계획서 11장)
+        private void OnAdminClose()
+        {
+            if (_state != AppState.Admin) return;
+            EnterState(AppState.Attract);
         }
 
         private void OnDrawingCompleted()
