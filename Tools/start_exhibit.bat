@@ -6,15 +6,19 @@ rem
 rem Register with Task Scheduler (run at logon, highest privileges) or drop a
 rem shortcut in shell:startup. Details: handover doc sec.7.
 rem
-rem APP_EXE is auto-detected for both layouts:
-rem   dev      <project>\Tools\start_exhibit.bat  -> <project>\Build\CarDrawing.exe
-rem   deployed <exedir>\Tools\start_exhibit.bat   -> <exedir>\CarDrawing.exe
+rem APP_EXE is auto-detected. The exe name follows Unity productName (currently
+rem AICarDrawing.exe); older builds were CarDrawing.exe, so both names are tried,
+rem in both layouts:
+rem   deployed <exedir>\Tools\start_exhibit.bat   -> <exedir>\<name>.exe
+rem   dev      <project>\Tools\start_exhibit.bat  -> <project>\Build\<name>.exe
 rem If the exe is missing this script still starts ComfyUI and exits, so an
 rem operator can launch the app from the Editor.
 
 setlocal
 set SCRIPT_DIR=%~dp0
-set APP_EXE=%SCRIPT_DIR%..\CarDrawing.exe
+set APP_EXE=%SCRIPT_DIR%..\AICarDrawing.exe
+if not exist "%APP_EXE%" set APP_EXE=%SCRIPT_DIR%..\Build\AICarDrawing.exe
+if not exist "%APP_EXE%" set APP_EXE=%SCRIPT_DIR%..\CarDrawing.exe
 if not exist "%APP_EXE%" set APP_EXE=%SCRIPT_DIR%..\Build\CarDrawing.exe
 set HEALTH_URL=http://127.0.0.1:8188/system_stats
 set MAX_WAIT_SECONDS=180
@@ -51,7 +55,7 @@ if not exist "%APP_EXE%" (
   goto END
 )
 echo [%date% %time%] launching app: %APP_EXE% >> "%LOGFILE%"
-start "CarDrawing" "%APP_EXE%"
+start "AICarDrawing" "%APP_EXE%"
 
 :END
 echo [%date% %time%] start_exhibit end >> "%LOGFILE%"

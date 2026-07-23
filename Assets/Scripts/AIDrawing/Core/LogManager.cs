@@ -57,8 +57,15 @@ namespace CarDrawing.Core
             {
                 Directory.CreateDirectory(LogsDir);
                 string line = $"[{DateTime.Now:yyyy-MM-dd HH:mm:ss}] [{level}] {message}\n";
+                string path = Path.Combine(LogsDir, DateTime.Now.ToString("yyyyMMdd") + ".log");
                 lock (WriteLock)
-                    File.AppendAllText(Path.Combine(LogsDir, DateTime.Now.ToString("yyyyMMdd") + ".log"), line);
+                {
+                    // 최신 로그가 파일 맨 위로 오도록 기존 내용 앞에 붙인다(append 아님) — 진단 시 스크롤 없이 바로 봄.
+                    // 파일이 커지면 매 기록마다 전체를 다시 쓰는 비용이 늘지만, 로그 파일이 일 단위(yyyyMMdd)로
+                    // 갈리므로 하루치로 제한된다. 기록 실패는 아래 catch가 삼켜 앱을 죽이지 않는다
+                    string existing = File.Exists(path) ? File.ReadAllText(path) : string.Empty;
+                    File.WriteAllText(path, line + existing);
+                }
             }
             catch
             {

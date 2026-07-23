@@ -18,6 +18,63 @@ namespace CarDrawing.Generation
     /// </summary>
     public class ComfyUIClient : MonoBehaviour
     {
+        public enum GenerationStatus
+        {
+            Uploading,
+            Submitted,
+            Running,
+            Completed,
+            Failed,
+            Cancelled,
+            TimedOut
+        }
+
+        public enum GenerationFailureKind
+        {
+            None,
+            ServerUnavailable,
+            UploadFailed,
+            WorkflowBuildFailed,
+            SubmissionFailed,
+            ServerExecutionFailed,
+            QueueWaitTimeout,
+            ExecutionTimeout,
+            ResultPollingTimeout,
+            TimeoutStateUnknown,
+            DownloadFailed
+        }
+
+        /// <summary>한 번의 이미지 생성 수명주기. 화면 상태와 별개로 서버 prompt까지 추적한다.</summary>
+        public sealed class GenerationRequest
+        {
+            public string GenerationId { get; internal set; }
+            public string SessionId { get; internal set; }
+            public string PromptId { get; internal set; }
+            public GenerationStatus Status { get; internal set; }
+            public GenerationFailureKind FailureKind { get; internal set; }
+            public bool IsCancellationRequested { get; internal set; }
+            public float ElapsedSeconds => Mathf.Max(0f,
+                (FinishedAtRealtime > 0f ? FinishedAtRealtime : Time.realtimeSinceStartup) - StartedAtRealtime);
+            public bool IsTerminal => Status == GenerationStatus.Completed ||
+                                      Status == GenerationStatus.Failed ||
+                                      Status == GenerationStatus.Cancelled ||
+                                      Status == GenerationStatus.TimedOut;
+
+            internal bool CallbackCompleted;
+            internal bool ServerCancellationStarted;
+            internal Coroutine Routine;
+            internal float StartedAtRealtime;
+            internal float FinishedAtRealtime;
+        }
+
+        private enum PromptQueueState
+        {
+            Unknown,
+            Missing,
+            Pending,
+            Running
+        }
+
         // 개별 HTTP 요청 타임아웃(초). 로컬 서버라 즉시 응답이 정상이며, 전체 시간은 generateTimeoutSeconds가 제한한다
         private const int RequestTimeoutSeconds = 10;
 
@@ -166,27 +223,97 @@ namespace CarDrawing.Generation
         public void Generate(string sessionId, byte[] linePng, byte[] colorPng, StylePreset style,
             Action<byte[]> onSuccess, Action<string> onFailure)
         {
-            StartCoroutine(GenerateRoutine(sessionId, linePng, colorPng, style, onSuccess, onFailure));
+            GenerateTracked(sessionId, linePng, colorPng, style,
+                (_, bytes) => onSuccess?.Invoke(bytes),
+                (_, reason) => onFailure?.Invoke(reason));
         }
 
-        private IEnumerator GenerateRoutine(string sessionId, byte[] linePng, byte[] colorPng, StylePreset style,
-            Action<byte[]> onSuccess, Action<string> onFailure)
+        /// <summary>요청 핸들을 반환하는 생성 API. 호출자는 핸들로 늦은 콜백을 검증하고 작업을 취소한다.</summary>
+        public GenerationRequest GenerateTracked(string sessionId, byte[] linePng, byte[] colorPng, StylePreset style,
+            Action<GenerationRequest, byte[]> onSuccess, Action<GenerationRequest, string> onFailure)
+        {
+            var request = new GenerationRequest
+            {
+                GenerationId = Guid.NewGuid().ToString("N"),
+                SessionId = sessionId,
+                Status = GenerationStatus.Uploading,
+                FailureKind = GenerationFailureKind.None,
+                StartedAtRealtime = Time.realtimeSinceStartup
+            };
+            request.Routine = StartCoroutine(GenerateRoutine(request, linePng, colorPng, style, onSuccess, onFailure));
+            return request;
+        }
+
+        /// <summary>사용자가 떠난 요청을 논리적으로 즉시 무효화하고, prompt가 있으면 서버에서도 제거한다.</summary>
+        public bool Cancel(GenerationRequest request)
+        {
+            if (request == null || request.IsTerminal) return false;
+
+            request.IsCancellationRequested = true;
+            request.Status = GenerationStatus.Cancelled;
+            request.FinishedAtRealtime = Time.realtimeSinceStartup;
+            LogManager.Info($"[ComfyUI] 생성 취소: 세션 {request.SessionId}, 요청 {request.GenerationId}");
+            BeginServerCancellation(request);
+            // prompt ID를 확보했다면 서버 취소를 별도 코루틴에 맡기고 본 생성 코루틴은 즉시 끝낸다.
+            // 제출 응답 전에는 prompt ID를 잃지 않도록 협력적 취소 지점까지 계속 진행한다.
+            if (!string.IsNullOrEmpty(request.PromptId) && request.Routine != null)
+            {
+                StopCoroutine(request.Routine);
+                request.Routine = null;
+            }
+            return true;
+        }
+
+        private IEnumerator GenerateRoutine(GenerationRequest request, byte[] linePng, byte[] colorPng, StylePreset style,
+            Action<GenerationRequest, byte[]> onSuccess, Action<GenerationRequest, string> onFailure)
         {
             ComfyUiConfig cfg = ConfigManager.Config.comfyUi;
             float deadline = Time.realtimeSinceStartup + cfg.generateTimeoutSeconds;
 
             // 1) 스케치 업로드. 세션 ID를 파일명에 넣어 이전 업로드와의 충돌을 피한다
             string lineName = null, colorName = null, uploadError = null;
-            yield return UploadImage(cfg, sessionId + "_line.png", linePng, (n, err) => { lineName = n; uploadError = err; });
-            if (lineName == null) { Fail(onFailure, "선 레이어 업로드 실패: " + uploadError); yield break; }
-            yield return UploadImage(cfg, sessionId + "_color.png", colorPng, (n, err) => { colorName = n; uploadError = err; });
-            if (colorName == null) { Fail(onFailure, "색 레이어 업로드 실패: " + uploadError); yield break; }
+            byte[] aiLinePng = linePng;
+            byte[] aiColorPng = colorPng;
+            bool vehicleGuideAdded = false;
+            if (cfg.vehicleGuideEnabled && request.SessionId != "warmup")
+            {
+                aiLinePng = VehicleSketchGuide.AddIfNeeded(linePng, out vehicleGuideAdded);
+                if (vehicleGuideAdded)
+                {
+                    aiColorPng = VehicleSketchGuide.AddFromReference(colorPng, linePng);
+                    LogManager.Info($"[ComfyUI] 비정형 낙서 차량 가이드 적용: {request.GenerationId}");
+                }
+            }
+            yield return UploadImage(cfg, request.SessionId + "_line.png", aiLinePng, (n, err) => { lineName = n; uploadError = err; });
+            if (ExitIfCancelled(request)) yield break;
+            if (lineName == null)
+            {
+                Fail(request, onFailure, "선 레이어 업로드 실패: " + uploadError,
+                    FailureKindForRequestError(uploadError, GenerationFailureKind.UploadFailed));
+                yield break;
+            }
+            yield return UploadImage(cfg, request.SessionId + "_color.png", aiColorPng, (n, err) => { colorName = n; uploadError = err; });
+            if (ExitIfCancelled(request)) yield break;
+            if (colorName == null)
+            {
+                Fail(request, onFailure, "색 레이어 업로드 실패: " + uploadError,
+                    FailureKindForRequestError(uploadError, GenerationFailureKind.UploadFailed));
+                yield break;
+            }
 
             // 2) 워크플로 로드 + 치환 (노드 매핑은 인수인계 §5 — 워크플로 노드 ID 변경 시 여기도 수정)
             string payload = null, buildError = null;
-            try { payload = BuildPromptPayload(cfg, lineName, colorName, style); }
+            // 워밍업은 모델 적재만 필요해 1차 패스로 끝내고, 실제 생성은 2차 스타일 패스로
+            // 흰 선화 편향을 제거한다.
+            bool addRestylePass = request.SessionId != "warmup";
+            try { payload = BuildPromptPayload(cfg, lineName, colorName, style, addRestylePass); }
             catch (Exception e) { buildError = e.Message; }
-            if (payload == null) { Fail(onFailure, "워크플로 구성 실패: " + buildError); yield break; }
+            if (payload == null)
+            {
+                Fail(request, onFailure, "워크플로 구성 실패: " + buildError,
+                    GenerationFailureKind.WorkflowBuildFailed);
+                yield break;
+            }
 
             // 3) 제출. 업로드 직후 첫 제출은 'Invalid image file'이 날 수 있어 재시도한다 (실측된 함정, 인수인계 §6)
             string promptId = null, submitError = null;
@@ -194,27 +321,77 @@ namespace CarDrawing.Generation
             {
                 if (attempt > 0) yield return new WaitForSecondsRealtime(0.3f);
                 yield return SubmitPrompt(cfg, payload, (id, err) => { promptId = id; submitError = err; });
+                if (request.IsCancellationRequested && promptId == null) yield break;
             }
-            if (promptId == null) { Fail(onFailure, "워크플로 제출 실패: " + submitError); yield break; }
+            if (promptId == null)
+            {
+                Fail(request, onFailure, "워크플로 제출 실패: " + submitError,
+                    FailureKindForRequestError(submitError, GenerationFailureKind.SubmissionFailed));
+                yield break;
+            }
+            request.PromptId = promptId;
+            request.Status = GenerationStatus.Submitted;
+            if (ExitIfCancelled(request))
+            {
+                BeginServerCancellation(request);
+                yield break;
+            }
 
             // 4) 완료 폴링 (계획서 7장: 0.5초 간격, 전체 타임아웃 내)
             ResultLocation location = null;
             bool serverReportedError = false;
+            request.Status = GenerationStatus.Running;
             while (Time.realtimeSinceStartup < deadline)
             {
                 yield return PollHistory(cfg, promptId, (loc, err) => { location = loc; serverReportedError = err; });
-                if (serverReportedError) { Fail(onFailure, "서버가 생성 오류를 보고함 (ComfyUI 콘솔 확인)"); yield break; }
+                if (ExitIfCancelled(request))
+                {
+                    BeginServerCancellation(request);
+                    yield break;
+                }
+                if (serverReportedError)
+                {
+                    Fail(request, onFailure, "서버가 생성 오류를 보고함 (ComfyUI 콘솔 확인)",
+                        GenerationFailureKind.ServerExecutionFailed);
+                    yield break;
+                }
                 if (location != null) break;
                 yield return new WaitForSecondsRealtime(cfg.pollIntervalSeconds);
             }
-            if (location == null) { Fail(onFailure, $"생성 시간 초과 ({cfg.generateTimeoutSeconds}초)"); yield break; }
+            if (location == null)
+            {
+                request.IsCancellationRequested = true;
+                PromptQueueState queueState = PromptQueueState.Unknown;
+                if (!request.ServerCancellationStarted)
+                {
+                    request.ServerCancellationStarted = true;
+                    yield return CancelPromptOnServer(cfg, request, state => queueState = state);
+                }
+                GenerationFailureKind timeoutKind = FailureKindForTimeout(queueState);
+                Fail(request, onFailure,
+                    $"생성 시간 초과 ({cfg.generateTimeoutSeconds}초, 상태 {queueState})",
+                    timeoutKind, GenerationStatus.TimedOut);
+                yield break;
+            }
 
             // 5) 결과 다운로드
             byte[] resultPng = null;
-            yield return DownloadResult(cfg, location, b => resultPng = b);
-            if (resultPng == null) { Fail(onFailure, "결과 다운로드 실패"); yield break; }
+            string downloadError = null;
+            yield return DownloadResult(cfg, location, (bytes, error) => { resultPng = bytes; downloadError = error; });
+            if (ExitIfCancelled(request)) yield break;
+            if (resultPng == null)
+            {
+                Fail(request, onFailure, "결과 다운로드 실패: " + downloadError,
+                    FailureKindForRequestError(downloadError, GenerationFailureKind.DownloadFailed));
+                yield break;
+            }
 
-            onSuccess?.Invoke(resultPng);
+            request.Status = GenerationStatus.Completed;
+            request.FinishedAtRealtime = Time.realtimeSinceStartup;
+            request.CallbackCompleted = true;
+            request.Routine = null;
+            LogManager.Info($"[ComfyUI] 생성 완료: 요청 {request.GenerationId}, prompt {request.PromptId}, {request.ElapsedSeconds:F1}초");
+            onSuccess?.Invoke(request, resultPng);
         }
 
         // 결과 파일의 서버상 위치 (/view 요청 파라미터 3종)
@@ -225,10 +402,126 @@ namespace CarDrawing.Generation
             public string Type;
         }
 
-        private static void Fail(Action<string> onFailure, string reason)
+        private static bool ExitIfCancelled(GenerationRequest request)
         {
-            LogManager.Warn($"[ComfyUI] {reason}");
-            onFailure?.Invoke(reason);
+            bool cancelled = request.IsCancellationRequested || request.Status == GenerationStatus.Cancelled;
+            if (cancelled) request.Routine = null;
+            return cancelled;
+        }
+
+        private static void Fail(GenerationRequest request, Action<GenerationRequest, string> onFailure, string reason,
+            GenerationFailureKind failureKind, GenerationStatus status = GenerationStatus.Failed)
+        {
+            if (request.CallbackCompleted || request.Status == GenerationStatus.Cancelled) return;
+            request.Status = status;
+            request.FailureKind = failureKind;
+            request.FinishedAtRealtime = Time.realtimeSinceStartup;
+            request.CallbackCompleted = true;
+            request.Routine = null;
+            LogManager.Warn($"[ComfyUI] 생성 실패: 종류 {failureKind}, 요청 {request.GenerationId}, " +
+                            $"prompt {request.PromptId ?? "없음"}, 경과 {request.ElapsedSeconds:F1}초, 사유 {reason}");
+            onFailure?.Invoke(request, reason);
+        }
+
+        private static GenerationFailureKind FailureKindForRequestError(string error, GenerationFailureKind fallback)
+        {
+            if (string.IsNullOrEmpty(error)) return fallback;
+            string value = error.ToLowerInvariant();
+            return value.Contains("cannot connect") || value.Contains("failed to connect") ||
+                   value.Contains("connection refused") || value.Contains("timed out") || value.Contains("http 0")
+                ? GenerationFailureKind.ServerUnavailable
+                : fallback;
+        }
+
+        private static GenerationFailureKind FailureKindForTimeout(PromptQueueState state)
+        {
+            switch (state)
+            {
+                case PromptQueueState.Pending: return GenerationFailureKind.QueueWaitTimeout;
+                case PromptQueueState.Running: return GenerationFailureKind.ExecutionTimeout;
+                case PromptQueueState.Missing: return GenerationFailureKind.ResultPollingTimeout;
+                default: return GenerationFailureKind.TimeoutStateUnknown;
+            }
+        }
+
+        private void BeginServerCancellation(GenerationRequest request)
+        {
+            if (request.ServerCancellationStarted || string.IsNullOrEmpty(request.PromptId)) return;
+            request.ServerCancellationStarted = true;
+            StartCoroutine(CancelPromptOnServer(ConfigManager.Config.comfyUi, request));
+        }
+
+        private IEnumerator CancelPromptOnServer(ComfyUiConfig cfg, GenerationRequest request,
+            Action<PromptQueueState> onStateRead = null)
+        {
+            bool pending = false, running = false;
+            bool queueRead = false;
+            using (UnityWebRequest queue = UnityWebRequest.Get(cfg.baseUrl.TrimEnd('/') + "/queue"))
+            {
+                queue.timeout = RequestTimeoutSeconds;
+                yield return queue.SendWebRequest();
+                if (queue.result == UnityWebRequest.Result.Success)
+                {
+                    try
+                    {
+                        ParseQueueState(queue.downloadHandler.text, request.PromptId, out pending, out running);
+                        queueRead = true;
+                    }
+                    catch (Exception e)
+                    {
+                        LogManager.Warn($"[ComfyUI] 취소 전 큐 응답 해석 실패: {e.Message}");
+                    }
+                }
+                else
+                    LogManager.Warn($"[ComfyUI] 취소 전 큐 조회 실패: {queue.error}");
+            }
+
+            if (pending || !queueRead)
+            {
+                // 큐 조회가 실패해도 prompt ID 삭제는 다른 작업을 건드리지 않으므로 안전하게 시도한다.
+                var body = new JObject { ["delete"] = new JArray { request.PromptId } };
+                yield return PostJson(cfg.baseUrl.TrimEnd('/') + "/queue", body.ToString(Formatting.None),
+                    "대기 작업 삭제");
+            }
+            else if (running)
+            {
+                yield return PostJson(cfg.baseUrl.TrimEnd('/') + "/interrupt", "{}", "실행 작업 중단");
+            }
+
+            PromptQueueState state = !queueRead ? PromptQueueState.Unknown :
+                running ? PromptQueueState.Running : pending ? PromptQueueState.Pending : PromptQueueState.Missing;
+            onStateRead?.Invoke(state);
+        }
+
+        private static void ParseQueueState(string responseJson, string promptId, out bool pending, out bool running)
+        {
+            pending = QueueContainsPrompt(JObject.Parse(responseJson)["queue_pending"] as JArray, promptId);
+            running = QueueContainsPrompt(JObject.Parse(responseJson)["queue_running"] as JArray, promptId);
+        }
+
+        private static bool QueueContainsPrompt(JArray queue, string promptId)
+        {
+            if (queue == null) return false;
+            foreach (JToken item in queue)
+            {
+                if (item is JArray values && values.Count > 1 && (string)values[1] == promptId)
+                    return true;
+            }
+            return false;
+        }
+
+        private IEnumerator PostJson(string url, string json, string operation)
+        {
+            using (var req = new UnityWebRequest(url, "POST"))
+            {
+                req.uploadHandler = new UploadHandlerRaw(Encoding.UTF8.GetBytes(json));
+                req.downloadHandler = new DownloadHandlerBuffer();
+                req.SetRequestHeader("Content-Type", "application/json");
+                req.timeout = RequestTimeoutSeconds;
+                yield return req.SendWebRequest();
+                if (req.result != UnityWebRequest.Result.Success)
+                    LogManager.Warn($"[ComfyUI] {operation} 실패: {req.error} / {req.downloadHandler.text}");
+            }
         }
 
         // ── 1) 업로드 ──────────────────────────────────────
@@ -278,13 +571,15 @@ namespace CarDrawing.Generation
 
         // ── 2) 워크플로 치환 ────────────────────────────────
 
-        private string BuildPromptPayload(ComfyUiConfig cfg, string lineName, string colorName, StylePreset style)
+        private string BuildPromptPayload(ComfyUiConfig cfg, string lineName, string colorName, StylePreset style,
+            bool addRestylePass)
         {
             string path = Path.Combine(Application.streamingAssetsPath, cfg.workflowPath);
             JObject workflow = JObject.Parse(File.ReadAllText(path));
 
             // 인수인계 §5의 치환 표: 3=긍정, 4=부정, 5=색 레이어, 6=선 레이어, 11=seed/denoise
-            workflow["4"]["inputs"]["text"] = style.negativePrompt;
+            string negative = JoinPrompt(cfg.vehicleNegativePromptPrefix, style.negativePrompt);
+            workflow["4"]["inputs"]["text"] = negative;
             workflow["5"]["inputs"]["image"] = colorName;
             workflow["6"]["inputs"]["image"] = lineName;
             workflow["11"]["inputs"]["seed"] = UnityEngine.Random.Range(1, int.MaxValue); // 매회 다른 결과가 나오도록
@@ -297,7 +592,7 @@ namespace CarDrawing.Generation
 
             // 스타일 전용 LoRA(픽셀아트 등): 체크포인트 위에 화풍 LoRA를 얹는다. 노드 20을 체크포인트와
             // 소비자(CLIP 3·4, KSampler 11) 사이에 끼워 model·clip을 LoRA 출력으로 돌린다
-            string positive = style.prompt;
+            string positive = JoinPrompt(cfg.vehiclePromptPrefix, style.prompt);
             if (!string.IsNullOrEmpty(style.lora))
             {
                 workflow["20"] = new JObject
@@ -320,8 +615,94 @@ namespace CarDrawing.Generation
             }
             workflow["3"]["inputs"]["text"] = positive;
 
+            if (addRestylePass)
+                AddRestylePass(workflow, style);
+
             var payload = new JObject { ["prompt"] = workflow, ["client_id"] = _clientId };
             return payload.ToString(Formatting.None);
+        }
+
+        /// <summary>
+        /// 1차 구조 생성 결과를 약한 ControlNet으로 한 번 더 img2img해 스타일의 색·재질을 입힌다.
+        /// 한 패스에서 구조와 화풍을 동시에 강제하면 검은 선화로만 남는 입력이 있어 두 단계를 분리한다.
+        /// </summary>
+        private static void AddRestylePass(JObject workflow, StylePreset style)
+        {
+            JToken clip = workflow["3"]["inputs"]["clip"].DeepClone();
+            JToken model = workflow["11"]["inputs"]["model"].DeepClone();
+            long seed = (long)workflow["11"]["inputs"]["seed"] + 1;
+            string positive = JoinPrompt(style.prompt, "preserve unusual vehicle silhouette");
+            if (!string.IsNullOrEmpty(style.loraTrigger))
+                positive = style.loraTrigger + ", " + positive;
+
+            workflow["21"] = new JObject
+            {
+                ["class_type"] = "VAEEncode",
+                ["inputs"] = new JObject
+                {
+                    ["pixels"] = new JArray { "12", 0 },
+                    ["vae"] = new JArray { "2", 0 }
+                }
+            };
+            workflow["24"] = new JObject
+            {
+                ["class_type"] = "CLIPTextEncode",
+                ["inputs"] = new JObject { ["text"] = positive, ["clip"] = clip.DeepClone() }
+            };
+            workflow["25"] = new JObject
+            {
+                ["class_type"] = "CLIPTextEncode",
+                ["inputs"] = new JObject { ["text"] = style.negativePrompt ?? string.Empty, ["clip"] = clip.DeepClone() }
+            };
+            workflow["26"] = new JObject
+            {
+                ["class_type"] = "ControlNetApplyAdvanced",
+                ["inputs"] = new JObject
+                {
+                    ["positive"] = new JArray { "24", 0 },
+                    ["negative"] = new JArray { "25", 0 },
+                    ["control_net"] = new JArray { "8", 0 },
+                    ["image"] = new JArray { "7", 0 },
+                    // 2차에서는 원형을 느슨하게만 붙잡아 화풍·색이 덮일 공간을 남긴다.
+                    ["strength"] = 0.18f,
+                    ["start_percent"] = 0f,
+                    ["end_percent"] = 0.4f
+                }
+            };
+            workflow["22"] = new JObject
+            {
+                ["class_type"] = "KSampler",
+                ["inputs"] = new JObject
+                {
+                    ["model"] = model,
+                    ["positive"] = new JArray { "26", 0 },
+                    ["negative"] = new JArray { "26", 1 },
+                    ["latent_image"] = new JArray { "21", 0 },
+                    ["seed"] = seed,
+                    ["steps"] = workflow["11"]["inputs"]["steps"].DeepClone(),
+                    ["cfg"] = workflow["11"]["inputs"]["cfg"].DeepClone(),
+                    ["sampler_name"] = workflow["11"]["inputs"]["sampler_name"].DeepClone(),
+                    ["scheduler"] = workflow["11"]["inputs"]["scheduler"].DeepClone(),
+                    ["denoise"] = Mathf.Clamp01(style.denoise)
+                }
+            };
+            workflow["23"] = new JObject
+            {
+                ["class_type"] = "VAEDecode",
+                ["inputs"] = new JObject
+                {
+                    ["samples"] = new JArray { "22", 0 },
+                    ["vae"] = new JArray { "2", 0 }
+                }
+            };
+            workflow["13"]["inputs"]["images"] = new JArray { "23", 0 };
+        }
+
+        private static string JoinPrompt(string prefix, string prompt)
+        {
+            if (string.IsNullOrWhiteSpace(prefix)) return prompt ?? string.Empty;
+            if (string.IsNullOrWhiteSpace(prompt)) return prefix;
+            return prefix.Trim().TrimEnd(',') + ", " + prompt.Trim();
         }
 
         // ── 3) 제출 ────────────────────────────────────────
@@ -431,7 +812,7 @@ namespace CarDrawing.Generation
 
         // ── 5) 다운로드 ─────────────────────────────────────
 
-        private IEnumerator DownloadResult(ComfyUiConfig cfg, ResultLocation location, Action<byte[]> onDone)
+        private IEnumerator DownloadResult(ComfyUiConfig cfg, ResultLocation location, Action<byte[], string> onDone)
         {
             string url = $"{cfg.baseUrl}/view" +
                          $"?filename={UnityWebRequest.EscapeURL(location.FileName)}" +
@@ -446,10 +827,10 @@ namespace CarDrawing.Generation
                 if (req.result != UnityWebRequest.Result.Success)
                 {
                     LogManager.Warn($"[ComfyUI] 결과 다운로드 실패: {req.error}");
-                    onDone(null);
+                    onDone(null, $"{req.error} (HTTP {req.responseCode}, {cfg.baseUrl})");
                     yield break;
                 }
-                onDone(req.downloadHandler.data);
+                onDone(req.downloadHandler.data, null);
             }
         }
     }

@@ -29,8 +29,8 @@ namespace CarDrawing.Results
             FilterConfig cfg = ConfigManager.Config.filter;
             if (!cfg.enabled)
             {
-                // 필터를 끈 운영 상태 — opt-in 작품이 곧장 갤러리로 간다 (Config.json filter.enabled)
-                onDone?.Invoke(true);
+                // 공개 전시에서는 필터 비활성도 '판정 불가'다. 관리자 검토 전까지 격리한다.
+                onDone?.Invoke(false);
                 return;
             }
             StartCoroutine(EvaluateRoutine(sessionId, cfg, onDone));

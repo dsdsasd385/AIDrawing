@@ -24,6 +24,16 @@ namespace CarDrawing.Results
             {
                 bool[,] modules = QrEncoder.Encode(text);
                 int moduleCount = modules.GetLength(0);
+
+                // 디버그: QR에 담긴 문자열의 실제 바이트 수와 선택된 버전을 남긴다 (버전 10-M 한도 ≈ 213바이트).
+                // 값이 매번 비슷한 건 URL 구조가 고정 길이라서다(고정 접두사 + 12자리 난수 + .png + 고정 길이 토큰).
+                // 한도에 근접하면 URL을 줄여야 한다. 초과하면 QrEncoder.Encode가 예외를 던져 아래 catch에서 실패 로그.
+                // 토큰(?쿼리)은 민감정보라 마스킹하고 앞부분만 남겨 실제 URL을 확인할 수 있게 한다
+                int queryAt = text.IndexOf('?');
+                string shownUrl = queryAt >= 0 ? text.Substring(0, queryAt) + $"?…(토큰 {text.Length - queryAt}B)" : text;
+                LogManager.Info($"[QR] {System.Text.Encoding.UTF8.GetByteCount(text)}바이트 " +
+                    $"({text.Length}자) → 버전 {(moduleCount - 17) / 4} / 한도 213 · {shownUrl}");
+
                 int sizePx = (moduleCount + quietZone * 2) * moduleScale;
 
                 var pixels = new Color32[sizePx * sizePx];

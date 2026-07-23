@@ -4,7 +4,10 @@
     "workflowPath": "ComfyUI/car_workflow_api.json",
     "pollIntervalSeconds": 0.5,
     "generateTimeoutSeconds": 90,
-    "submitMaxRetries": 1
+    "submitMaxRetries": 1,
+    "vehicleGuideEnabled": true,
+    "vehiclePromptPrefix": "(single complete car based on the unusual input silhouette:1.5), preserve outline as vehicle body, integrated cabin, chassis, (round wheels attached below and touching ground:1.4)",
+    "vehicleNegativePromptPrefix": "unchanged colorized doodle, standalone symbol or animal, wheel-less object, top view, spaceship, aircraft, boat"
   },
   "timing": {
     "idlePopupSeconds": 90,
@@ -46,6 +49,7 @@
   },
   "watchdog": {
     "enabled": true,
+    "editorAutoStart": true,
     "checkIntervalSeconds": 10,
     "requestTimeoutSeconds": 5,
     "failThreshold": 3,
@@ -58,5 +62,12 @@
     "cornerSize": 100,
     "cornerTapCount": 10,
     "cornerTapSeconds": 3
+  },
+  "storage": {
+    "cleanupEnabled": true,
+    "sessionRetentionDays": 7,
+    "logRetentionDays": 30,
+    "comfyUiRetentionDays": 7,
+    "comfyUiRootPath": "%USERPROFILE%/ComfyUI"
   }
 }

@@ -74,10 +74,15 @@ namespace CarDrawing.Core
         private bool _idlePopupShown;
         private float _idlePopupShownAt;
         private float _stateEnteredAt;
+        // 현재 이미지 생성 요청. 화면 상태가 다시 Generating이 되어도 이전 요청과 구분하기 위해 핸들 자체를 비교한다
+        private ComfyUIClient.GenerationRequest _activeGeneration;
+        // 현재 영상 생성 요청. 결과 화면을 떠날 때 서버 prompt까지 취소한다
+        private VideoGenerationRequest _activeVideo;
 
         private void Start()
         {
             ResolveReferences();
+            StorageMaintenance.RunOnce();
 
             attractPanel.StartRequested += OnStartRequested;
             drawingPanel.CompleteRequested += OnDrawingCompleted;
@@ -292,6 +297,8 @@ namespace CarDrawing.Core
         // 세션 산출물 정리. CPU 텍스처는 명시적으로 파괴해야 메모리가 회수된다 (장시간 무인 운영 대비)
         private void CleanupSession()
         {
+            CancelActiveGeneration();
+            CancelActiveVideo();
             _sessionId = null;
             _linePng = null;
             _colorPng = null;
@@ -319,13 +326,12 @@ namespace CarDrawing.Core
             EnterState(AppState.Drawing);
         }
 
-        // 스타일·생성 화면에서 [다시 그리기] — 그림을 유지한 채 그리기 화면으로 되돌린다 (2026-07-14).
-        // 생성 중에 눌렀다면 요청은 서버에서 계속 돌지만, 늦게 도착한 결과는
-        // OnGenerationSucceeded/Failed의 상태 가드(_state == Generating)가 버린다.
-        // 세션 ID는 그대로 두어 이후 [완성!]에서 새로 발급된다
+        // 스타일·생성 화면에서 [다시 그리기] — 그림을 유지한 채 그리기 화면으로 되돌린다.
+        // 생성 중이면 UI만 닫지 않고 ComfyUI 대기/실행 작업도 취소한다.
         private void OnBackToDrawing()
         {
             if (_state != AppState.Style && _state != AppState.Generating) return;
+            CancelActiveGeneration();
             EnterState(AppState.Drawing);
         }
 
@@ -374,18 +380,45 @@ namespace CarDrawing.Core
         private void OnStyleChosen(StylePreset style)
         {
             if (_state != AppState.Style) return;
+            if (_activeGeneration != null && !_activeGeneration.IsTerminal) return;
 
             _chosenStyle = style; // 결과 후처리(픽셀화 등)가 스타일 설정을 참조한다
             EnterState(AppState.Generating);
             generatingPanel.Begin(_sketchTexture);
             LogManager.Info($"[AppFlow] 생성 요청: 세션 {_sessionId}, 스타일 {style.id}");
-            comfyClient.Generate(_sessionId, _linePng, _colorPng, style, OnGenerationSucceeded, OnGenerationFailed);
+            _activeGeneration = comfyClient.GenerateTracked(
+                _sessionId, _linePng, _colorPng, style, OnGenerationSucceeded, OnGenerationFailed);
         }
 
-        private void OnGenerationSucceeded(byte[] resultPng)
+        private bool IsCurrentGeneration(ComfyUIClient.GenerationRequest request)
         {
-            // 생성 도중 상태가 바뀌었으면(이론상 없음) 늦게 온 결과를 버린다
-            if (_state != AppState.Generating) return;
+            return request != null && ReferenceEquals(_activeGeneration, request) &&
+                   request.SessionId == _sessionId && _state == AppState.Generating;
+        }
+
+        private void CancelActiveGeneration()
+        {
+            if (_activeGeneration == null) return;
+            comfyClient?.Cancel(_activeGeneration);
+            _activeGeneration = null;
+        }
+
+        private void CancelActiveVideo()
+        {
+            if (_activeVideo == null) return;
+            videoGenerator?.Cancel(_activeVideo);
+            _activeVideo = null;
+            _videoInProgress = false;
+        }
+
+        private void OnGenerationSucceeded(ComfyUIClient.GenerationRequest request, byte[] resultPng)
+        {
+            if (!IsCurrentGeneration(request))
+            {
+                LogManager.Warn($"[AppFlow] 만료된 생성 결과 무시: 세션 {request?.SessionId}, 요청 {request?.GenerationId}");
+                return;
+            }
+            _activeGeneration = null;
 
             // 픽셀아트 등 후처리 스타일이면 여기서 변환 — 이후의 저장·표시·QR 업로드·영상이 전부 같은 그림을 쓴다
             resultPng = PixelArtFilter.Apply(resultPng, _chosenStyle);
@@ -427,6 +460,7 @@ namespace CarDrawing.Core
         // 도착하면 이미지→영상 교체, 실패·타임아웃이면 이미지가 그대로 남는다 (폴백 — 관람객은 실패를 모른다)
         private void StartVideoGeneration(byte[] resultPng)
         {
+            CancelActiveVideo();
             _videoInProgress = false; // 이전 세션의 잔재 플래그 제거 (다시 그리기 경로)
             if (videoGenerator == null || !videoGenerator.IsEnabled) return;
 
@@ -436,8 +470,11 @@ namespace CarDrawing.Core
             LogManager.Info($"[AppFlow] 영상 생성 시작 (백그라운드): 세션 {videoSessionId}");
 
             // 스타일을 넘겨 영상도 같은 화풍을 유지하게 한다 (픽셀아트 LoRA·픽셀화 — 안 넘기면 영상이 매끈하게 재해석됨)
-            videoGenerator.Generate(videoSessionId, resultPng, _linePng, _chosenStyle, mp4 =>
+            VideoGenerationRequest request = null;
+            request = videoGenerator.Generate(videoSessionId, resultPng, _linePng, _chosenStyle, mp4 =>
             {
+                if (!ReferenceEquals(_activeVideo, request)) return;
+                _activeVideo = null;
                 // 그 사이 다음 관람객으로 넘어갔으면 표시하지 않는다 (파일은 저장해 기록만 남긴다)
                 string path = null;
                 try { path = SessionStore.SaveResultVideo(videoSessionId, mp4); }
@@ -452,6 +489,8 @@ namespace CarDrawing.Core
                 LogManager.Info($"[AppFlow] 영상 표시: {path}");
             }, reason =>
             {
+                if (!ReferenceEquals(_activeVideo, request)) return;
+                _activeVideo = null;
                 // 실패는 로그만 — 결과 화면은 이미지로 계속 (Generate 내부가 이미 Warn을 남겼다)
                 if (_state == AppState.Result && _sessionId == videoSessionId)
                 {
@@ -482,9 +521,9 @@ namespace CarDrawing.Core
 
             if (contentFilter == null)
             {
-                // 필터 컴포넌트 자체가 없으면 꺼진 것과 동일하게 취급 (예외로 죽지 않기)
-                string dest = SessionStore.AddToGallery(sessionId);
-                LogManager.Info($"[AppFlow] 필터 없음 — 갤러리 직행: {dest}");
+                // 공개 전시는 판정 불가를 통과로 간주하지 않는다. 운영자가 관리자 화면에서 복원할 수 있다.
+                string dest = SessionStore.AddToQuarantine(sessionId);
+                LogManager.Warn($"[AppFlow] 필터 없음 — 안전을 위해 격리: {dest}");
                 return;
             }
 
@@ -496,12 +535,19 @@ namespace CarDrawing.Core
             });
         }
 
-        private void OnGenerationFailed(string reason)
+        private void OnGenerationFailed(ComfyUIClient.GenerationRequest request, string reason)
         {
-            if (_state != AppState.Generating) return;
+            if (!IsCurrentGeneration(request))
+            {
+                LogManager.Warn($"[AppFlow] 만료된 생성 오류 무시: 세션 {request?.SessionId}, 요청 {request?.GenerationId}, 사유 {reason}");
+                return;
+            }
+            _activeGeneration = null;
 
             // 계획서 12장: 해당 세션만 사과 안내 후 초기화, 앱은 계속 동작
-            LogManager.Error($"[AppFlow] 생성 실패 (세션 {_sessionId}): {reason}");
+            LogManager.Error($"[AppFlow] 생성 실패 (세션 {request.SessionId}, 요청 {request.GenerationId}, " +
+                             $"prompt {request.PromptId ?? "없음"}, 종류 {request.FailureKind}, " +
+                             $"상태 {request.Status}, 경과 {request.ElapsedSeconds:F1}초): {reason}");
             generatingPanel.ShowError(TextLibrary.Get("generating.error"));
             StartCoroutine(ReturnToAttractAfter(ConfigManager.Config.timing.errorNoticeSeconds));
         }
@@ -517,6 +563,8 @@ namespace CarDrawing.Core
         {
             if (_state != AppState.Result) return;
             // 그림을 유지한 채 그리기 화면으로 — 수정 후 재생성하는 체험 흐름
+            CancelActiveVideo();
+            resultPanel.HideVideoPending();
             EnterState(AppState.Drawing);
         }
     }

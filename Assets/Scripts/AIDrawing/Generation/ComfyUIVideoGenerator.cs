@@ -40,13 +40,36 @@ namespace CarDrawing.Generation
         public bool IsEnabled => ConfigManager.Config.video.enabled;
 
         /// <inheritdoc/>
-        public void Generate(string sessionId, byte[] resultPng, byte[] linePng, StylePreset style,
+        public VideoGenerationRequest Generate(string sessionId, byte[] resultPng, byte[] linePng, StylePreset style,
             Action<byte[]> onSuccess, Action<string> onFailure)
         {
-            StartCoroutine(GenerateRoutine(sessionId, resultPng, linePng, style, onSuccess, onFailure));
+            var request = new VideoGenerationRequest
+            {
+                RequestId = Guid.NewGuid().ToString("N"),
+                SessionId = sessionId,
+                Status = VideoGenerationStatus.Uploading
+            };
+            request.Routine = StartCoroutine(GenerateRoutine(request, resultPng, linePng, style, onSuccess, onFailure));
+            return request;
         }
 
-        private IEnumerator GenerateRoutine(string sessionId, byte[] resultPng, byte[] linePng, StylePreset style,
+        public bool Cancel(VideoGenerationRequest request)
+        {
+            if (request == null || request.IsTerminal) return false;
+
+            request.IsCancellationRequested = true;
+            request.Status = VideoGenerationStatus.Cancelled;
+            LogManager.Info($"[ComfyUI영상] 생성 취소: 세션 {request.SessionId}, 요청 {request.RequestId}");
+            BeginServerCancellation(request);
+            if (!string.IsNullOrEmpty(request.PromptId) && request.Routine != null)
+            {
+                StopCoroutine(request.Routine);
+                request.Routine = null;
+            }
+            return true;
+        }
+
+        private IEnumerator GenerateRoutine(VideoGenerationRequest request, byte[] resultPng, byte[] linePng, StylePreset style,
             Action<byte[]> onSuccess, Action<string> onFailure)
         {
             ComfyUiConfig server = ConfigManager.Config.comfyUi;
@@ -55,18 +78,20 @@ namespace CarDrawing.Generation
 
             // 1) 입력 업로드. 이미지 생성 때 올린 파일과 이름이 겹치지 않게 접두사를 달리한다
             string resultName = null, lineName = null, uploadError = null;
-            yield return UploadImage(server, sessionId + "_vresult.png", resultPng,
+            yield return UploadImage(server, request.SessionId + "_vresult.png", resultPng,
                 (n, err) => { resultName = n; uploadError = err; });
-            if (resultName == null) { Fail(onFailure, "영상 기반 이미지 업로드 실패: " + uploadError); yield break; }
-            yield return UploadImage(server, sessionId + "_vline.png", linePng,
+            if (ExitIfCancelled(request)) yield break;
+            if (resultName == null) { Fail(request, onFailure, "영상 기반 이미지 업로드 실패: " + uploadError); yield break; }
+            yield return UploadImage(server, request.SessionId + "_vline.png", linePng,
                 (n, err) => { lineName = n; uploadError = err; });
-            if (lineName == null) { Fail(onFailure, "영상 선 레이어 업로드 실패: " + uploadError); yield break; }
+            if (ExitIfCancelled(request)) yield break;
+            if (lineName == null) { Fail(request, onFailure, "영상 선 레이어 업로드 실패: " + uploadError); yield break; }
 
             // 2) 영상 워크플로 로드 + 치환
             string payload = null, buildError = null;
             try { payload = BuildPromptPayload(video, resultName, lineName, style); }
             catch (Exception e) { buildError = e.Message; }
-            if (payload == null) { Fail(onFailure, "영상 워크플로 구성 실패: " + buildError); yield break; }
+            if (payload == null) { Fail(request, onFailure, "영상 워크플로 구성 실패: " + buildError); yield break; }
 
             // 3) 제출 (업로드 직후 첫 제출 실패 함정은 이미지와 동일 — 재시도 1회)
             string promptId = null, submitError = null;
@@ -74,8 +99,17 @@ namespace CarDrawing.Generation
             {
                 if (attempt > 0) yield return new WaitForSecondsRealtime(0.3f);
                 yield return SubmitPrompt(server, payload, (id, err) => { promptId = id; submitError = err; });
+                if (request.IsCancellationRequested && promptId == null) yield break;
             }
-            if (promptId == null) { Fail(onFailure, "영상 워크플로 제출 실패: " + submitError); yield break; }
+            if (promptId == null) { Fail(request, onFailure, "영상 워크플로 제출 실패: " + submitError); yield break; }
+            request.PromptId = promptId;
+            request.Status = VideoGenerationStatus.Queued;
+            if (request.IsCancellationRequested)
+            {
+                BeginServerCancellation(request);
+                request.Routine = null;
+                yield break;
+            }
 
             // 4) 완료 폴링. 영상은 40초 이상 걸리므로 이미지보다 느슨한 1초 간격이면 충분하다
             ResultLocation location = null;
@@ -83,17 +117,29 @@ namespace CarDrawing.Generation
             while (Time.realtimeSinceStartup < deadline)
             {
                 yield return PollHistory(server, promptId, (loc, err) => { location = loc; serverReportedError = err; });
-                if (serverReportedError) { Fail(onFailure, "서버가 영상 생성 오류를 보고함 (ComfyUI 콘솔 확인)"); yield break; }
+                if (ExitIfCancelled(request)) yield break;
+                request.Status = VideoGenerationStatus.Running;
+                if (serverReportedError) { Fail(request, onFailure, "서버가 영상 생성 오류를 보고함 (ComfyUI 콘솔 확인)"); yield break; }
                 if (location != null) break;
                 yield return new WaitForSecondsRealtime(1f);
             }
-            if (location == null) { Fail(onFailure, $"영상 생성 시간 초과 ({video.generateTimeoutSeconds}초)"); yield break; }
+            if (location == null)
+            {
+                request.Status = VideoGenerationStatus.TimedOut;
+                yield return CancelPromptOnServer(server, request);
+                if (!request.IsCancellationRequested)
+                    Fail(request, onFailure, $"영상 생성 시간 초과 ({video.generateTimeoutSeconds}초)", true);
+                yield break;
+            }
 
             // 5) mp4 다운로드
             byte[] mp4 = null;
             yield return DownloadResult(server, location, b => mp4 = b);
-            if (mp4 == null) { Fail(onFailure, "영상 다운로드 실패"); yield break; }
+            if (ExitIfCancelled(request)) yield break;
+            if (mp4 == null) { Fail(request, onFailure, "영상 다운로드 실패"); yield break; }
 
+            request.Status = VideoGenerationStatus.Completed;
+            request.Routine = null;
             onSuccess?.Invoke(mp4);
         }
 
@@ -104,10 +150,84 @@ namespace CarDrawing.Generation
             public string Type;
         }
 
-        private static void Fail(Action<string> onFailure, string reason)
+        private static void Fail(VideoGenerationRequest request, Action<string> onFailure, string reason, bool preserveStatus = false)
         {
+            if (request.IsCancellationRequested) return;
+            if (!preserveStatus) request.Status = VideoGenerationStatus.Failed;
+            request.Routine = null;
             LogManager.Warn($"[ComfyUI영상] {reason}");
             onFailure?.Invoke(reason);
+        }
+
+        private static bool ExitIfCancelled(VideoGenerationRequest request)
+        {
+            if (!request.IsCancellationRequested) return false;
+            request.Routine = null;
+            return true;
+        }
+
+        private void BeginServerCancellation(VideoGenerationRequest request)
+        {
+            if (request.ServerCancellationStarted || string.IsNullOrEmpty(request.PromptId)) return;
+            request.ServerCancellationStarted = true;
+            StartCoroutine(CancelPromptOnServer(ConfigManager.Config.comfyUi, request));
+        }
+
+        private IEnumerator CancelPromptOnServer(ComfyUiConfig server, VideoGenerationRequest request)
+        {
+            bool pending = false, running = false, queueRead = false;
+            using (UnityWebRequest queue = UnityWebRequest.Get(server.baseUrl.TrimEnd('/') + "/queue"))
+            {
+                queue.timeout = RequestTimeoutSeconds;
+                yield return queue.SendWebRequest();
+                if (queue.result == UnityWebRequest.Result.Success)
+                {
+                    try
+                    {
+                        JObject json = JObject.Parse(queue.downloadHandler.text);
+                        pending = QueueContainsPrompt(json["queue_pending"] as JArray, request.PromptId);
+                        running = QueueContainsPrompt(json["queue_running"] as JArray, request.PromptId);
+                        queueRead = true;
+                    }
+                    catch (Exception e)
+                    {
+                        LogManager.Warn($"[ComfyUI영상] 취소 전 큐 응답 해석 실패: {e.Message}");
+                    }
+                }
+            }
+
+            if (pending || !queueRead)
+            {
+                var body = new JObject { ["delete"] = new JArray { request.PromptId } };
+                yield return PostJson(server.baseUrl.TrimEnd('/') + "/queue", body.ToString(Formatting.None), "대기 작업 삭제");
+            }
+            else if (running)
+            {
+                yield return PostJson(server.baseUrl.TrimEnd('/') + "/interrupt", "{}", "실행 작업 중단");
+            }
+        }
+
+        private static bool QueueContainsPrompt(JArray queue, string promptId)
+        {
+            if (queue == null) return false;
+            foreach (JToken item in queue)
+                if (item is JArray values && values.Count > 1 && (string)values[1] == promptId)
+                    return true;
+            return false;
+        }
+
+        private IEnumerator PostJson(string url, string json, string operation)
+        {
+            using (var req = new UnityWebRequest(url, "POST"))
+            {
+                req.uploadHandler = new UploadHandlerRaw(Encoding.UTF8.GetBytes(json));
+                req.downloadHandler = new DownloadHandlerBuffer();
+                req.SetRequestHeader("Content-Type", "application/json");
+                req.timeout = RequestTimeoutSeconds;
+                yield return req.SendWebRequest();
+                if (req.result != UnityWebRequest.Result.Success)
+                    LogManager.Warn($"[ComfyUI영상] {operation} 실패: {req.error} / {req.downloadHandler.text}");
+            }
         }
 
         // ── 업로드 (ComfyUIClient와 동일 엔드포인트) ─────────────

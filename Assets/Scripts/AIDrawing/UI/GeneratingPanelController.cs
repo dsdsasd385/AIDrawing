@@ -29,16 +29,18 @@ namespace CarDrawing.UI
             Image background = UiBuilder.CreateImage(transform, "Background", new Color(0.12f, 0.12f, 0.16f));
             UiBuilder.Stretch((RectTransform)background.transform);
 
-            // 스케치를 보여주며 "이 그림이 변하는 중"이라는 느낌을 준다
+            // 스케치를 보여주며 "이 그림이 변하는 중"이라는 느낌을 준다.
+            // 그리기 캔버스와 같은 1152×768(3:2)로 화면 정중앙에 배치 — "내가 그린 그림 그대로가 변한다"는 연속감
             Image frame = UiBuilder.CreateImage(background.transform, "SketchFrame", Color.white);
-            UiBuilder.Place((RectTransform)frame.transform, new Vector2(0, 80), new Vector2(592, 400));
+            UiBuilder.Place((RectTransform)frame.transform, Vector2.zero, new Vector2(1168, 784));
 
             _sketch = UiBuilder.CreateRawImage(frame.transform, "Sketch");
-            UiBuilder.Place((RectTransform)_sketch.transform, Vector2.zero, new Vector2(576, 384));
+            UiBuilder.Place((RectTransform)_sketch.transform, Vector2.zero, new Vector2(1152, 768));
 
+            // 스케치(±384)가 화면 중앙을 채우므로 문구는 그 아래 여백에 둔다 (겹침 방지)
             _message = UiBuilder.CreateText(background.transform, "Message",
                 TextLibrary.Get("generating.message"), 48, Color.white);
-            UiBuilder.Place((RectTransform)_message.transform, new Vector2(0, -280), new Vector2(1600, 160));
+            UiBuilder.Place((RectTransform)_message.transform, new Vector2(0, -455), new Vector2(1600, 120));
 
             // 생성이 늦어지거나 스타일을 잘못 골랐을 때 빠져나갈 길 (스타일 화면과 같은 우측 상단 자리).
             // 실패 사과 중에는 숨긴다

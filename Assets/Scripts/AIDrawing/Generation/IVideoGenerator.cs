@@ -1,7 +1,36 @@
 using System;
+using UnityEngine;
 
 namespace CarDrawing.Generation
 {
+    public enum VideoGenerationStatus
+    {
+        Uploading,
+        Queued,
+        Running,
+        Completed,
+        Failed,
+        Cancelled,
+        TimedOut
+    }
+
+    /// <summary>한 번의 영상 생성과 ComfyUI prompt를 함께 추적하는 요청 핸들.</summary>
+    public sealed class VideoGenerationRequest
+    {
+        public string RequestId { get; internal set; }
+        public string SessionId { get; internal set; }
+        public string PromptId { get; internal set; }
+        public VideoGenerationStatus Status { get; internal set; }
+        public bool IsCancellationRequested { get; internal set; }
+        public bool IsTerminal => Status == VideoGenerationStatus.Completed ||
+                                  Status == VideoGenerationStatus.Failed ||
+                                  Status == VideoGenerationStatus.Cancelled ||
+                                  Status == VideoGenerationStatus.TimedOut;
+
+        internal bool ServerCancellationStarted;
+        internal Coroutine Routine;
+    }
+
     /// <summary>
     /// 결과 이미지를 짧은 영상(mp4)으로 만드는 생성기 계약 (마일스톤 ⑥).
     /// IResultUploader와 같은 교체 가능 구조 — 지금은 로컬 ComfyUI(AnimateDiff) 구현이 기본이고,
@@ -22,7 +51,10 @@ namespace CarDrawing.Generation
         /// <param name="style">선택된 스타일. 로컬 구현이 영상에도 화풍을 유지하는 데 쓴다(LoRA·픽셀화). 외부 API 구현은 무시해도 된다</param>
         /// <param name="onSuccess">완성된 mp4 바이트를 받는 콜백</param>
         /// <param name="onFailure">실패 사유(로그용 한국어)를 받는 콜백 — 호출부는 이미지 폴백 유지</param>
-        void Generate(string sessionId, byte[] resultPng, byte[] linePng, StylePreset style,
+        VideoGenerationRequest Generate(string sessionId, byte[] resultPng, byte[] linePng, StylePreset style,
             Action<byte[]> onSuccess, Action<string> onFailure);
+
+        /// <summary>요청을 즉시 무효화하고 서버의 대기/실행 prompt도 제거한다.</summary>
+        bool Cancel(VideoGenerationRequest request);
     }
 }

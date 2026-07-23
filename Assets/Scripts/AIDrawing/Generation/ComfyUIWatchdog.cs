@@ -20,10 +20,10 @@ namespace CarDrawing.Generation
         public event Action<bool> HealthChanged;
 
         /// <summary>현재 서버가 응답하는지. 첫 체크 전에는 낙관적으로 true — 기동 직후 잠깐 안내가 뜨는 것을 피한다</summary>
-        public bool IsHealthy { get; private set; } = true;
+        public bool IsHealthy { get; private set; } = false;
 
         /// <summary>관리자 화면에 보여줄 마지막 점검 결과 한 줄</summary>
-        public string StatusLine { get; private set; } = "점검 전";
+        public string StatusLine { get; private set; } = "초기 연결 확인 중";
 
         [SerializeField] private ComfyUIClient comfyClient;
 
@@ -100,7 +100,9 @@ namespace CarDrawing.Generation
         /// <returns>실제로 실행했으면 true</returns>
         public bool TryRestart(WatchdogConfig cfg, bool force = false)
         {
-            if (_restarting) return false;
+            // 자동 재시작(폭주 방지)만 진행 중 재시도를 막는다. 관리자 강제 재시작(force)은
+            // 운영자가 명시적으로 누른 것이므로 진행 중이어도 다시 시도한다 (안 그러면 "재시작 안됨"으로 보인다)
+            if (_restarting && !force) return false;
             if (string.IsNullOrEmpty(cfg.restartCommand))
             {
                 LogManager.Warn("[Watchdog] 재시작 명령이 비어 있음 — 안내만 표시하고 재시작은 생략");
@@ -144,6 +146,27 @@ namespace CarDrawing.Generation
 
         /// <summary>관리자 모드용 — 현재 설정으로 강제 재시작</summary>
         public bool RestartNow() => TryRestart(ConfigManager.Config.watchdog, true);
+
+        /// <summary>
+        /// 지금 즉시 한 번만 헬스체크하고 결과를 콜백으로 돌려준다.
+        /// IsHealthy는 연속 실패 임계·낙관 초기값·워치독 꺼짐 때문에 실제보다 늦거나 어긋날 수 있어,
+        /// 관리자 재시작처럼 "지금 서버가 정말 살아 있나"를 정확히 알아야 할 때 쓴다. 내부 상태는 건드리지 않는다.
+        /// </summary>
+        public void CheckNow(Action<bool> onResult)
+        {
+            StartCoroutine(CheckNowRoutine(onResult));
+        }
+
+        private IEnumerator CheckNowRoutine(Action<bool> onResult)
+        {
+            string url = ConfigManager.Config.comfyUi.baseUrl.TrimEnd('/') + "/system_stats";
+            using (var request = UnityWebRequest.Get(url))
+            {
+                request.timeout = Mathf.Max(1, Mathf.RoundToInt(ConfigManager.Config.watchdog.requestTimeoutSeconds));
+                yield return request.SendWebRequest();
+                onResult?.Invoke(request.result == UnityWebRequest.Result.Success);
+            }
+        }
 
         private IEnumerator ClearRestartingAfter(float seconds)
         {

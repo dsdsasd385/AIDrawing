@@ -54,6 +54,11 @@ namespace CarDrawing.UI
         private bool _wipeArmed;
         private Text _wipeLabel;
 
+        // 확인 팝업 (살아있는 서버 재시작처럼 되돌리기 번거로운 동작 전 재확인)
+        private GameObject _confirmPopup;
+        private Text _confirmMessage;
+        private Action _confirmAction;
+
         private void Awake()
         {
             // 씬에 이전 런타임 UI가 남아 있으면 중복 생성된다 (ResultPanel과 같은 방어)
@@ -66,6 +71,7 @@ namespace CarDrawing.UI
 
             BuildLockScreen(background.transform);
             BuildBody(background.transform);
+            BuildConfirmPopup(background.transform); // 본문 위에 올라오도록 마지막에 생성
         }
 
         private void OnEnable()
@@ -80,6 +86,7 @@ namespace CarDrawing.UI
             ApplyPinDisplay();
 
             _wipeArmed = false;
+            HideConfirm(); // 이전에 열린 팝업이 남아 있지 않게
             _page = 0;
             SetMessage("");
             if (!needPassword) RefreshAll();
@@ -254,6 +261,53 @@ namespace CarDrawing.UI
             return button;
         }
 
+        // ── 확인 팝업 ────────────────────────────────────────
+
+        // 위험한 동작(살아있는 서버 재시작 등) 전에 한 번 더 확인받는 모달. 평소엔 숨어 있다.
+        // 반투명 오버레이가 뒤 UI 클릭을 막는다 (raycastTarget이 켜진 Image가 전체를 덮는다)
+        private void BuildConfirmPopup(Transform parent)
+        {
+            Image overlay = UiBuilder.CreateImage(parent, "ConfirmPopup", new Color(0f, 0f, 0f, 0.6f));
+            UiBuilder.Stretch((RectTransform)overlay.transform);
+            _confirmPopup = overlay.gameObject;
+
+            Image box = UiBuilder.CreateImage(overlay.transform, "Box", new Color(0.15f, 0.17f, 0.23f));
+            UiBuilder.Place((RectTransform)box.transform, Vector2.zero, new Vector2(780, 380));
+
+            _confirmMessage = UiBuilder.CreateText(box.transform, "Message", "", 30, Color.white);
+            UiBuilder.Place((RectTransform)_confirmMessage.transform, new Vector2(0, 60), new Vector2(700, 200));
+
+            Button ok = UiBuilder.CreateButton(box.transform, TextLibrary.Get("admin.confirmYes"),
+                new Color(0.85f, 0.45f, 0.30f), 28);
+            UiBuilder.Place((RectTransform)ok.transform, new Vector2(-170, -120), new Vector2(300, 78));
+            ok.onClick.AddListener(() =>
+            {
+                Action action = _confirmAction; // 팝업을 먼저 닫고 실행 (동작 중 팝업이 남지 않게)
+                HideConfirm();
+                action?.Invoke();
+            });
+
+            Button cancel = UiBuilder.CreateButton(box.transform, TextLibrary.Get("admin.confirmNo"),
+                new Color(0.45f, 0.48f, 0.55f), 28);
+            UiBuilder.Place((RectTransform)cancel.transform, new Vector2(170, -120), new Vector2(300, 78));
+            cancel.onClick.AddListener(HideConfirm);
+
+            _confirmPopup.SetActive(false);
+        }
+
+        private void ShowConfirm(string message, Action onConfirm)
+        {
+            _confirmAction = onConfirm;
+            if (_confirmMessage != null) _confirmMessage.text = message;
+            if (_confirmPopup != null) _confirmPopup.SetActive(true);
+        }
+
+        private void HideConfirm()
+        {
+            _confirmAction = null;
+            if (_confirmPopup != null) _confirmPopup.SetActive(false);
+        }
+
         // ── 진입(PIN) ────────────────────────────────────────
 
         private void TryUnlock()
@@ -292,13 +346,18 @@ namespace CarDrawing.UI
             string uploader = _b2 != null && _b2.IsConfigured ? "Backblaze B2 (연결됨)"
                 : _gcs != null && _gcs.IsConfigured ? "GCS (연결됨)"
                 : "미설정 — QR 자동 숨김";
+            // 인터넷(네트워크 인터페이스) 유무 — QR 업로드가 인터넷을 쓴다. 끊겨도 체험(로컬 생성)은 계속된다
+            string network = Application.internetReachability == NetworkReachability.NotReachable
+                ? "끊김 — QR 업로드 불가 "
+                : "연결됨";
 
             _statusText.text =
                 $"버전: {Application.version} (Unity {Application.unityVersion})\n\n" +
                 $"ComfyUI: {comfy}\n" +
                 $"  주소: {cfg.comfyUi.baseUrl}\n\n" +
                 $"업로더(QR): {uploader}\n" +
-                $"필터(VLM): {(cfg.filter.enabled ? $"켜짐 — {cfg.filter.model}" : "꺼짐 (opt-in 즉시 전시)")}\n" +
+                $"네트워크: {network}\n" +
+                $"필터(VLM): {(cfg.filter.enabled ? $"켜짐 — {cfg.filter.model}" : "꺼짐 (신청 작품 격리)")}\n" +
                 $"영상 생성: {(cfg.video.enabled ? "켜짐" : "꺼짐")}\n" +
                 $"워치독: {(cfg.watchdog.enabled ? $"켜짐 ({cfg.watchdog.checkIntervalSeconds:F0}초 주기)" : "꺼짐")}\n\n" +
                 $"스타일: {StyleLibrary.Styles.Count}종\n" +
@@ -449,6 +508,22 @@ namespace CarDrawing.UI
         private void OnRestartServer()
         {
             if (_watchdog == null) { SetMessage("워치독을 찾지 못했습니다"); return; }
+
+            // IsHealthy는 지연 지표(연속 실패 임계·낙관 초기값·워치독 꺼짐)라 실제와 어긋날 수 있다.
+            // 지금 즉시 헬스체크해서, 정말 살아 있을 때만 확인 팝업을 띄운다. 죽어 있으면 곧장 재시작
+            // (어차피 되살려야 하므로 재확인 불필요)
+            SetMessage("서버 상태 확인 중…");
+            _watchdog.CheckNow(alive =>
+            {
+                SetMessage(""); // 확인이 끝났으니 "확인 중" 문구를 지운다 (팝업을 닫아도 남지 않게)
+                if (alive) ShowConfirm(TextLibrary.Get("admin.restartConfirm"), DoRestart);
+                else DoRestart();
+            });
+        }
+
+        private void DoRestart()
+        {
+            if (_watchdog == null) return;
             bool started = _watchdog.RestartNow();
             SetMessage(started ? TextLibrary.Get("admin.restarting") : "재시작을 시작하지 못했습니다 (로그 확인)");
             RefreshStatus();

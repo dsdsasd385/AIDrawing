@@ -20,6 +20,17 @@ namespace CarDrawing.Core
         public float generateTimeoutSeconds = 90f;
         /// <summary>제출 재시도 횟수. 업로드 직후 첫 제출 실패가 실측된 함정 (인수인계 §6)</summary>
         public int submitMaxRetries = 1;
+        /// <summary>바퀴가 없는 낙서에 AI 입력용 차대·바퀴 힌트를 추가할지 여부. 관람객 원본에는 반영되지 않는다</summary>
+        public bool vehicleGuideEnabled = true;
+        /// <summary>모든 스타일 앞에 붙는 차량 재해석 공통 프롬프트</summary>
+        public string vehiclePromptPrefix =
+            "(single complete car based on the unusual input silhouette:1.5), " +
+            "preserve outline as vehicle body, integrated cabin, chassis, " +
+            "(round wheels attached below and touching ground:1.4)";
+        /// <summary>스타일별 부정 프롬프트 앞에 붙는 비차량 결과 억제 공통 프롬프트</summary>
+        public string vehicleNegativePromptPrefix =
+            "unchanged colorized doodle, standalone symbol or animal, wheel-less object, " +
+            "top view, spaceship, aircraft, boat";
     }
 
     /// <summary>시간 정책 (계획서 4장)</summary>
@@ -81,7 +92,7 @@ namespace CarDrawing.Core
     [Serializable]
     public class FilterConfig
     {
-        /// <summary>필터 사용 여부. 꺼져 있으면 opt-in 작품이 곧장 갤러리로 간다</summary>
+        /// <summary>필터 사용 여부. 꺼져 있으면 opt-in 작품은 관리자 확인 전까지 격리된다</summary>
         public bool enabled = false;
         /// <summary>OpenAI 호환 chat completions 엔드포인트 (예: Ollama, llama.cpp 서버)</summary>
         public string endpoint = "http://127.0.0.1:11434/v1/chat/completions";
@@ -120,6 +131,8 @@ namespace CarDrawing.Core
     {
         /// <summary>워치독 사용 여부. 끄면 헬스체크·재시작을 하지 않는다 (개발 중 서버를 수동으로 껐다 켤 때)</summary>
         public bool enabled = true;
+        /// <summary>Unity 프로젝트를 열었을 때 서버가 꺼져 있으면 restartCommand를 자동 실행할지</summary>
+        public bool editorAutoStart = true;
         /// <summary>헬스체크 주기(초)</summary>
         public float checkIntervalSeconds = 10f;
         /// <summary>헬스체크 요청 타임아웃(초). 로컬 서버라 짧게 잡는다</summary>
@@ -165,6 +178,21 @@ namespace CarDrawing.Core
         public float attractSlideIntervalSeconds = 5f;
     }
 
+    /// <summary>장시간 전시 운영 중 로컬 산출물이 무기한 누적되지 않게 하는 보존 정책.</summary>
+    [Serializable]
+    public class StorageConfig
+    {
+        public bool cleanupEnabled = true;
+        /// <summary>원본 스케치·결과·영상 보존일. 0 이하면 자동 삭제하지 않는다.</summary>
+        public int sessionRetentionDays = 7;
+        /// <summary>앱 로그 보존일. 0 이하면 자동 삭제하지 않는다.</summary>
+        public int logRetentionDays = 30;
+        /// <summary>앱이 만든 ComfyUI input/output 보존일. 0 이하면 자동 삭제하지 않는다.</summary>
+        public int comfyUiRetentionDays = 7;
+        /// <summary>환경 변수를 포함할 수 있는 ComfyUI 루트 경로.</summary>
+        public string comfyUiRootPath = "%USERPROFILE%/ComfyUI";
+    }
+
     /// <summary>앱 전체 설정 묶음. StreamingAssets/Data/Config.json과 1:1 대응</summary>
     [Serializable]
     public class AppConfig
@@ -178,6 +206,7 @@ namespace CarDrawing.Core
         public VideoConfig video = new VideoConfig();
         public WatchdogConfig watchdog = new WatchdogConfig();
         public AdminConfig admin = new AdminConfig();
+        public StorageConfig storage = new StorageConfig();
     }
 
     /// <summary>

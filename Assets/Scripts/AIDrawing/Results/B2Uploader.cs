@@ -101,7 +101,7 @@ namespace CarDrawing.Results
                 }
 
                 _credentialsFailed = false;
-                LogManager.Info($"[B2] 자격 증명 로드 완료: keyId {_keyId}");
+                LogManager.Info("[B2] 자격 증명 로드 완료");
             }
             catch (Exception e)
             {
@@ -178,9 +178,12 @@ namespace CarDrawing.Results
         private IEnumerator UploadRoutine(string sessionId, byte[] png, Action<string> onDone)
         {
             B2Config cfg = ConfigManager.Config.b2;
-            // 세션 ID는 시각 기반이라 추측 가능 — 타인 작품 URL을 유추하지 못하도록 난수 접미사.
-            // PNG와 랜딩 HTML이 같은 접두사를 공유해 다운로드 토큰 1개(fileNamePrefix)로 둘 다 커버된다
-            string baseName = cfg.objectPrefix + sessionId + "_" + Guid.NewGuid().ToString("N").Substring(0, 8);
+            // 객체 이름은 짧은 난수 하나로 충분하다 — 고유성 + 추측 방지(시각 기반 세션 ID로 타인 작품 URL
+            // 유추 차단)를 동시에 만족하면서, QR URL을 짧게 유지해 인코더 용량(버전 10-M ≈ 213바이트) 안에 든다.
+            // 세션 추적은 세션 ID를 객체 이름에 박는 대신 아래 완료 로그의 '세션 → 객체' 매핑으로 한다
+            // (로컬 Sessions/도 세션 ID 기준). PNG와 랜딩 HTML이 같은 접두사를 공유해 다운로드 토큰
+            // 1개(fileNamePrefix)로 둘 다 커버된다. 12 hex = 48비트라 전시 규모에서 충돌·추측 모두 무시할 수준
+            string baseName = cfg.objectPrefix + Guid.NewGuid().ToString("N").Substring(0, 12);
             string pngName = baseName + ".png";
             string htmlName = baseName + ".html";
 
@@ -244,7 +247,9 @@ namespace CarDrawing.Results
                 }
 
                 string qrUrl = $"{_downloadUrl}/file/{_bucketName}/{qrTarget}{tokenQuery}";
-                LogManager.Info($"[B2] 업로드 완료 ({(qrTarget == pngName ? "PNG 직링크" : "랜딩 페이지")}, 링크 유효 {cfg.downloadAuthSeconds}초): {qrUrl}");
+                // 세션 → 객체 이름 매핑을 남긴다 (객체 이름이 난수라 어느 세션 작품인지 추적하려면 이 로그가 유일한 연결).
+                // 토큰이 담긴 전체 qrUrl은 남기지 않는다 (민감정보 — 계획서 §6)
+                LogManager.Info($"[B2] 업로드 완료: 세션 {sessionId} → 객체 {pngName} ({(qrTarget == pngName ? "PNG 직링크" : "랜딩 페이지")}, 링크 유효 {cfg.downloadAuthSeconds}초)");
                 onDone?.Invoke(qrUrl);
                 yield break;
             }

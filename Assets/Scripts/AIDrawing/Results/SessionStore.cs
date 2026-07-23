@@ -21,11 +21,11 @@ namespace CarDrawing.Results
         public static string QuarantineDir => Path.Combine(Application.persistentDataPath, "Quarantine");
 
         /// <summary>
-        /// 새 세션 ID를 발급한다. 파일명 접두사로 쓰인다 (예: 20260708_143012).
+        /// 새 세션 ID를 발급한다. 밀리초와 GUID 일부를 포함해 빠른 재요청도 파일명이 충돌하지 않는다.
         /// </summary>
         public static string NewSessionId()
         {
-            return DateTime.Now.ToString("yyyyMMdd_HHmmss");
+            return $"{DateTime.Now:yyyyMMdd_HHmmss_fff}_{Guid.NewGuid():N}".Substring(0, 28);
         }
 
         /// <summary>
